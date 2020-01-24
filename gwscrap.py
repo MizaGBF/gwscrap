@@ -290,6 +290,30 @@ class Scrapper():
             print('makedb(): ' + str(e))
             return False
 
+    def makebotdb(self): # make a SQL file (useful for searching the whole thing)
+        try:
+            print("Building Database...")
+            try:
+                with open('GW{}_crew_full.json'.format(self.gw)) as f:
+                    cdata = json.load(f)
+            except Exception as ex:
+                print("Error:", ex)
+                return
+            conn = sqlite3.connect('GW.sql'.format(self.gw))
+            c = conn.cursor()
+            c.execute('CREATE TABLE GW (id)')
+            c.execute("INSERT INTO GW VALUES ({})".format(self.gw))
+            c.execute('CREATE TABLE crews (ranking int, id int, name text, preliminaries int, day1 int, total_1 int, day_2 int, total_2 int, day_3 int, total_3 int, day_4 int, total_4 int)')
+            for id in cdata:
+                c.execute("INSERT INTO crews VALUES ({},{},'{}',{},{},{},{},{},{},{},{},{})".format(cdata[id].get('ranking', 'NULL'), id, cdata[id]['name'].replace("'", "''"), cdata[id].get('prelim', 'NULL'), cdata[id].get('delta_d1', 'NULL'), cdata[id].get('d1', 'NULL'), cdata[id].get('delta_d2', 'NULL'), cdata[id].get('d2', 'NULL'), cdata[id].get('delta_d3', 'NULL'), cdata[id].get('d3', 'NULL'), cdata[id].get('delta_d4', 'NULL'), cdata[id].get('d4', 'NULL')))
+            conn.commit()
+            conn.close()
+            print('Done')
+            return True
+        except Exception as e:
+            print('makebotdb(): ' + str(e))
+            return False
+
     def build_crew_list(self, temp=None): # build the gbfg leechlists on a .csv format
         remove_punctuation_map = dict((ord(char), None) for char in '\/*?:"<>|')
         try:
@@ -581,7 +605,7 @@ class Scrapper():
                 return
 
 # we start here
-print("GW Ranking Scrapper 1.3")
+print("GW Ranking Scrapper 1.4")
 # gw num
 while True:
     try:
@@ -626,7 +650,7 @@ while True:
             print("[6/6] Complete")
         elif i == "9":
             while True:
-                print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary Crew Lists\n[2] Build Temporary /gbfg/ Ranking\n[3] Download /gbfg/ member list\n[4] Download a crew member list\n[Any] Quit")
+                print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary Crew Lists\n[2] Build Temporary /gbfg/ Ranking\n[3] Download /gbfg/ member list\n[4] Download a crew member list\n[5] Make MizaBOT database\n[Any] Quit")
                 i = input("Input: ")
                 print('')
                 if i == "0": scrapper.buildGbfgFile()
@@ -653,6 +677,7 @@ while True:
                             print(l)
                             scrapper.downloadGbfg(*l)
                         except: print("Please input a number")
+                elif i == "5": scrapper.makebotdb()
                 else: break
                 scrapper.save()
         else: exit(0)
