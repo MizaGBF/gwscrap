@@ -624,7 +624,7 @@ except Exception as e:
 # main loop
 while True:
     try:
-        print("\nMain Menu\n[0] Download Crew\n[1] Download Player\n[2] Download All\n[3] Compile Crew Data\n[4] Compile player Data\n[5] Build Database\n[6] Build Crew Lists\n[7] Build Crew Ranking\n[8] Build Player Ranking\n[9] Compile and Build all\n[10] Advanced\n[Any] Quit")
+        print("\nMain Menu\n[0] Download Crew\n[1] Download Player\n[2] Download All\n[3] Compile Crew Data\n[4] Compile Player Data\n[5] Build Database\n[6] Build Crew Lists\n[7] Build Crew Ranking\n[8] Build Player Ranking\n[9] Compile and Build all\n[10] Advanced\n[Any] Quit")
         i = input("Input: ")
         print('')
         if i == "0": scrapper.run(1)
