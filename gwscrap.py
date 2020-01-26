@@ -216,52 +216,54 @@ class Scrapper():
             print("Done, saved to 'GW{}_player.json'".format(self.gw))
             self.save()
 
-    def buildGW(self): # build a .json compiling all the data withing json named with the 'days' suffix
+    def buildGW(self, mode = 0): # build a .json compiling all the data withing json named with the 'days' suffix
         days = ['prelim', 'd1', 'd2', 'd3', 'd4']
-        results = {}
-        print("Compiling crew data for GW{}...".format(self.gw)) # crew first
-        for d in days:
-            try:
-                with open('GW{}_crew_{}.json'.format(self.gw, d)) as f:
-                    data = json.load(f)
-                for c in data:
-                    if 'id' not in c: continue
-                    if c['id'] not in results: results[c['id']] = {}
-                    results[c['id']][d] = c['point']
-                    results[c['id']]['name'] = c['name']
-                    # we calculate the daily deltas here
-                    if d == 'd1' and 'prelim' in results[c['id']]: results[c['id']]['delta_d1'] = str(int(results[c['id']][d]) - int(results[c['id']]['prelim']))
-                    elif d == 'd2' and 'd1' in results[c['id']]: results[c['id']]['delta_d2'] = str(int(results[c['id']][d]) - int(results[c['id']]['d1']))
-                    elif d == 'd3' and 'd2' in results[c['id']]: results[c['id']]['delta_d3'] = str(int(results[c['id']][d]) - int(results[c['id']]['d2']))
-                    elif d == 'd4' and 'd3' in results[c['id']]: results[c['id']]['delta_d4'] = str(int(results[c['id']][d]) - int(results[c['id']]['d3']))
-                    if d == days[-1]: results[c['id']]['ranking'] = c['ranking']
-            except Exception as e:
-                print(e)
-        self.writeFile(results, 'GW{}_crew_full.json'.format(self.gw))
-        print("Done, saved to 'GW{}_crew_full.json'".format(self.gw))
+        if mode == 0 or mode == 1:
+            results = {}
+            print("Compiling crew data for GW{}...".format(self.gw)) # crew first
+            for d in days:
+                try:
+                    with open('GW{}_crew_{}.json'.format(self.gw, d)) as f:
+                        data = json.load(f)
+                    for c in data:
+                        if 'id' not in c: continue
+                        if c['id'] not in results: results[c['id']] = {}
+                        results[c['id']][d] = c['point']
+                        results[c['id']]['name'] = c['name']
+                        # we calculate the daily deltas here
+                        if d == 'd1' and 'prelim' in results[c['id']]: results[c['id']]['delta_d1'] = str(int(results[c['id']][d]) - int(results[c['id']]['prelim']))
+                        elif d == 'd2' and 'd1' in results[c['id']]: results[c['id']]['delta_d2'] = str(int(results[c['id']][d]) - int(results[c['id']]['d1']))
+                        elif d == 'd3' and 'd2' in results[c['id']]: results[c['id']]['delta_d3'] = str(int(results[c['id']][d]) - int(results[c['id']]['d2']))
+                        elif d == 'd4' and 'd3' in results[c['id']]: results[c['id']]['delta_d4'] = str(int(results[c['id']][d]) - int(results[c['id']]['d3']))
+                        if d == days[-1]: results[c['id']]['ranking'] = c['ranking']
+                except Exception as e:
+                    print(e)
+            self.writeFile(results, 'GW{}_crew_full.json'.format(self.gw))
+            print("Done, saved to 'GW{}_crew_full.json'".format(self.gw))
 
-        results = {}
-        print("Compiling player data for GW{}...".format(self.gw)) # player next, exact same thing
-        for d in days:
-            try:
-                with open('GW{}_player_{}.json'.format(self.gw, d)) as f:
-                    data = json.load(f)
-                for c in data:
-                    if c['user_id'] not in results: results[c['user_id']] = {}
-                    results[c['user_id']][d] = c['point']
-                    results[c['user_id']]['name'] = c['name']
-                    results[c['user_id']]['level'] = c['level']
-                    if d == 'd1' and 'prelim' in results[c['user_id']]: results[c['user_id']]['delta_d1'] = str(int(results[c['user_id']][d]) - int(results[c['user_id']]['prelim']))
-                    elif d == 'd2' and 'd1' in results[c['user_id']]: results[c['user_id']]['delta_d2'] = str(int(results[c['user_id']][d]) - int(results[c['user_id']]['d1']))
-                    elif d == 'd3' and 'd2' in results[c['user_id']]: results[c['user_id']]['delta_d3'] = str(int(results[c['user_id']][d]) - int(results[c['user_id']]['d2']))
-                    elif d == 'd4' and 'd3' in results[c['user_id']]: results[c['user_id']]['delta_d4'] = str(int(results[c['user_id']][d]) - int(results[c['user_id']]['d3']))
-                    if d == days[-1]:
-                        results[c['user_id']]['defeat'] = c['defeat']
-                        results[c['user_id']]['rank'] = c['rank']
-            except Exception as e:
-                print(e)
-        self.writeFile(results, 'GW{}_player_full.json'.format(self.gw))
-        print("Done, saved to 'GW{}_player_full.json'".format(self.gw))
+        if mode == 0 or mode == 2:
+            results = {}
+            print("Compiling player data for GW{}...".format(self.gw)) # player next, exact same thing
+            for d in days:
+                try:
+                    with open('GW{}_player_{}.json'.format(self.gw, d)) as f:
+                        data = json.load(f)
+                    for c in data:
+                        if c['user_id'] not in results: results[c['user_id']] = {}
+                        results[c['user_id']][d] = c['point']
+                        results[c['user_id']]['name'] = c['name']
+                        results[c['user_id']]['level'] = c['level']
+                        if d == 'd1' and 'prelim' in results[c['user_id']]: results[c['user_id']]['delta_d1'] = str(int(results[c['user_id']][d]) - int(results[c['user_id']]['prelim']))
+                        elif d == 'd2' and 'd1' in results[c['user_id']]: results[c['user_id']]['delta_d2'] = str(int(results[c['user_id']][d]) - int(results[c['user_id']]['d1']))
+                        elif d == 'd3' and 'd2' in results[c['user_id']]: results[c['user_id']]['delta_d3'] = str(int(results[c['user_id']][d]) - int(results[c['user_id']]['d2']))
+                        elif d == 'd4' and 'd3' in results[c['user_id']]: results[c['user_id']]['delta_d4'] = str(int(results[c['user_id']][d]) - int(results[c['user_id']]['d3']))
+                        if d == days[-1]:
+                            results[c['user_id']]['defeat'] = c['defeat']
+                            results[c['user_id']]['rank'] = c['rank']
+                except Exception as e:
+                    print(e)
+            self.writeFile(results, 'GW{}_player_full.json'.format(self.gw))
+            print("Done, saved to 'GW{}_player_full.json'".format(self.gw))
 
     def makedb(self): # make a SQL file (useful for searching the whole thing)
         try:
@@ -622,18 +624,19 @@ except Exception as e:
 # main loop
 while True:
     try:
-        print("\nMain Menu\n[0] Download Crew\n[1] Download Player\n[2] Download All\n[3] Compile Data\n[4] Build Database\n[5] Build Crew Lists\n[6] Build Crew Ranking\n[7] Build Player Ranking\n[8] Compile and Build all\n[9] Advanced\n[Any] Quit")
+        print("\nMain Menu\n[0] Download Crew\n[1] Download Player\n[2] Download All\n[3] Compile Crew Data\n[4] Compile player Data\n[5] Build Database\n[6] Build Crew Lists\n[7] Build Crew Ranking\n[8] Build Player Ranking\n[9] Compile and Build all\n[10] Advanced\n[Any] Quit")
         i = input("Input: ")
         print('')
         if i == "0": scrapper.run(1)
         elif i == "1": scrapper.run(2)
         elif i == "2": scrapper.run(0)
-        elif i == "3": scrapper.buildGW()
-        elif i == "4": scrapper.makedb()
-        elif i == "5": scrapper.build_crew_list()
-        elif i == "6": scrapper.build_crew_ranking_list()
-        elif i == "7": scrapper.build_player_list()
-        elif i == "8":
+        elif i == "3": scrapper.buildGW(1)
+        elif i == "4": scrapper.buildGW(2)
+        elif i == "5": scrapper.makedb()
+        elif i == "6": scrapper.build_crew_list()
+        elif i == "7": scrapper.build_crew_ranking_list()
+        elif i == "8": scrapper.build_player_list()
+        elif i == "9":
             print("[0/6] Compiling Data")
             scrapper.buildGW()
             print("[1/6] Building a SQL database")
@@ -648,7 +651,7 @@ while True:
             print("[5/6] Building the player ranking .csv file")
             scrapper.build_player_list()
             print("[6/6] Complete")
-        elif i == "9":
+        elif i == "10":
             while True:
                 print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary Crew Lists\n[2] Build Temporary /gbfg/ Ranking\n[3] Download /gbfg/ member list\n[4] Download a crew member list\n[5] Make MizaBOT database\n[Any] Quit")
                 i = input("Input: ")
