@@ -298,6 +298,8 @@ class Scrapper():
             try:
                 with open('GW{}_crew_full.json'.format(self.gw)) as f:
                     cdata = json.load(f)
+                with open('GW{}_player_full.json'.format(self.gw)) as f:
+                    pdata = json.load(f)
             except Exception as ex:
                 print("Error:", ex)
                 return
@@ -308,6 +310,10 @@ class Scrapper():
             c.execute('CREATE TABLE crews (ranking int, id int, name text, preliminaries int, day1 int, total_1 int, day_2 int, total_2 int, day_3 int, total_3 int, day_4 int, total_4 int)')
             for id in cdata:
                 c.execute("INSERT INTO crews VALUES ({},{},'{}',{},{},{},{},{},{},{},{},{})".format(cdata[id].get('ranking', 'NULL'), id, cdata[id]['name'].replace("'", "''"), cdata[id].get('prelim', 'NULL'), cdata[id].get('delta_d1', 'NULL'), cdata[id].get('d1', 'NULL'), cdata[id].get('delta_d2', 'NULL'), cdata[id].get('d2', 'NULL'), cdata[id].get('delta_d3', 'NULL'), cdata[id].get('d3', 'NULL'), cdata[id].get('delta_d4', 'NULL'), cdata[id].get('d4', 'NULL')))
+            c.execute('CREATE TABLE players (ranking int, id int, name text, total_4 int)')
+            for id in pdata:
+                if pdata[id].get('rank', 'NULL') != 'NULL':
+                    c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('d4', 'NULL')))
             conn.commit()
             conn.close()
             print('Done')
@@ -607,7 +613,7 @@ class Scrapper():
                 return
 
 # we start here
-print("GW Ranking Scrapper 1.4")
+print("GW Ranking Scrapper 1.5")
 # gw num
 while True:
     try:
