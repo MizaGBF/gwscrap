@@ -292,7 +292,7 @@ class Scrapper():
             print('makedb(): ' + str(e))
             return False
 
-    def makebotdb(self): # make a SQL file (useful for searching the whole thing)
+    def makebotdb(self, mode = 0): # make a SQL file (useful for searching the whole thing)
         try:
             print("Building Database...")
             try:
@@ -312,7 +312,15 @@ class Scrapper():
                 c.execute("INSERT INTO crews VALUES ({},{},'{}',{},{},{},{},{},{},{},{},{})".format(cdata[id].get('ranking', 'NULL'), id, cdata[id]['name'].replace("'", "''"), cdata[id].get('prelim', 'NULL'), cdata[id].get('delta_d1', 'NULL'), cdata[id].get('d1', 'NULL'), cdata[id].get('delta_d2', 'NULL'), cdata[id].get('d2', 'NULL'), cdata[id].get('delta_d3', 'NULL'), cdata[id].get('d3', 'NULL'), cdata[id].get('delta_d4', 'NULL'), cdata[id].get('d4', 'NULL')))
             c.execute('CREATE TABLE players (ranking int, id int, name text, total_4 int)')
             for id in pdata:
-                if pdata[id].get('rank', 'NULL') != 'NULL':
+                if mode == 1:
+                    c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('prelim', 'NULL')))
+                elif mode == 2:
+                    c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('d1', 'NULL')))
+                elif mode == 3:
+                    c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('d2', 'NULL')))
+                elif mode == 4:
+                    c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('d3', 'NULL')))
+                elif (mode == 0 and pdata[id].get('rank', 'NULL') != 'NULL') or (mode == 1):
                     c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('d4', 'NULL')))
             conn.commit()
             conn.close()
@@ -613,7 +621,7 @@ class Scrapper():
                 return
 
 # we start here
-print("GW Ranking Scrapper 1.5")
+print("GW Ranking Scrapper 1.6")
 # gw num
 while True:
     try:
@@ -659,7 +667,7 @@ while True:
             print("[6/6] Complete")
         elif i == "10":
             while True:
-                print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary Crew Lists\n[2] Build Temporary /gbfg/ Ranking\n[3] Download /gbfg/ member list\n[4] Download a crew member list\n[5] Make MizaBOT database\n[Any] Quit")
+                print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary Crew Lists\n[2] Build Temporary /gbfg/ Ranking\n[3] Download /gbfg/ member list\n[4] Download a crew member list\n[5] Make Temporary MizaBOT database\n[6] Make Final MizaBOT database\n[Any] Quit")
                 i = input("Input: ")
                 print('')
                 if i == "0": scrapper.buildGbfgFile()
@@ -686,7 +694,14 @@ while True:
                             print(l)
                             scrapper.downloadGbfg(*l)
                         except: print("Please input a number")
-                elif i == "5": scrapper.makebotdb()
+                elif i == "5": 
+                    days = ['prelim', 'd1', 'd2', 'd3']
+                    print("Input the current day (Leave blank to cancel):", days)
+                    i = input("Input: ")
+                    if i == "": pass
+                    elif i not in days: print("Invalid day")
+                    else: scrapper.makebotdb(days.index(i) + 1)
+                elif i == "6": scrapper.makebotdb(0)
                 else: break
                 scrapper.save()
         else: exit(0)
