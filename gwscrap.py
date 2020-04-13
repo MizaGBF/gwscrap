@@ -320,7 +320,7 @@ class Scrapper():
                     c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('d2', 'NULL')))
                 elif mode == 4:
                     c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('d3', 'NULL')))
-                elif (mode == 0 and pdata[id].get('rank', 'NULL') != 'NULL') or (mode == 1):
+                elif (mode == 0 and pdata[id].get('rank', 'NULL') != 'NULL'):
                     c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('d4', 'NULL')))
             conn.commit()
             conn.close()
