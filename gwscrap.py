@@ -305,11 +305,11 @@ class Scrapper():
                 return
             conn = sqlite3.connect('GW.sql'.format(self.gw))
             c = conn.cursor()
-            c.execute('CREATE TABLE GW (id)')
-            c.execute("INSERT INTO GW VALUES ({})".format(self.gw))
-            c.execute('CREATE TABLE crews (ranking int, id int, name text, preliminaries int, day1 int, total_1 int, day_2 int, total_2 int, day_3 int, total_3 int, day_4 int, total_4 int)')
+            c.execute('CREATE TABLE info (id int, ver int)')
+            c.execute("INSERT INTO info VALUES ({}, 2)".format(self.gw))
+            c.execute('CREATE TABLE crews (ranking int, id int, name text, preliminaries int, total_1 int, total_2 int, total_3 int, total_4 int)')
             for id in cdata:
-                c.execute("INSERT INTO crews VALUES ({},{},'{}',{},{},{},{},{},{},{},{},{})".format(cdata[id].get('ranking', 'NULL'), id, cdata[id]['name'].replace("'", "''"), cdata[id].get('prelim', 'NULL'), cdata[id].get('delta_d1', 'NULL'), cdata[id].get('d1', 'NULL'), cdata[id].get('delta_d2', 'NULL'), cdata[id].get('d2', 'NULL'), cdata[id].get('delta_d3', 'NULL'), cdata[id].get('d3', 'NULL'), cdata[id].get('delta_d4', 'NULL'), cdata[id].get('d4', 'NULL')))
+                c.execute("INSERT INTO crews VALUES ({},{},'{}',{},{},{},{},{})".format(cdata[id].get('ranking', 'NULL'), id, cdata[id]['name'].replace("'", "''"), cdata[id].get('prelim', 'NULL'), cdata[id].get('d1', 'NULL'), cdata[id].get('d2', 'NULL'), cdata[id].get('d3', 'NULL'), cdata[id].get('d4', 'NULL')))
             c.execute('CREATE TABLE players (ranking int, id int, name text, current_total int)')
             for id in pdata:
                 if mode == 1:
@@ -621,7 +621,7 @@ class Scrapper():
                 return
 
 # we start here
-print("GW Ranking Scrapper 1.6")
+print("GW Ranking Scrapper 1.7")
 # gw num
 while True:
     try:
