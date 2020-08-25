@@ -15,10 +15,10 @@ import os
 from os import listdir
 from os.path import isfile, join
 
-class Scrapper():
+class Scraper():
     def __init__(self, gw_num : int): # constructor requires the gw number
         if gw_num < 1 or gw_num > 999: raise Exception("Invalid GW ID")
-        self.gbfg_ids = ['418206','432330','472465','518173','581111','1010961','705648','841064','745085','1317803','645927','844716','599992','940560','940700','977866','1036007','1049216','1141898','1161924','588156','1593480','1586134','1580990','1629318','632242','678459','1601132','1380234']
+        self.gbfg_ids = ['418206','432330','472465','518173','581111','1010961','705648','841064','745085','1317803','645927','844716','599992','940560','940700','977866','1036007','1049216','1141898','1161924','588156','1593480','1586134','1580990','1629318','632242','678459','1601132','1380234', '1744673']
         self.gw = gw_num
         self.max_threads = 100 # change this if needed
         # preparing urls
@@ -61,7 +61,7 @@ class Scrapper():
             print('save(): ' + str(e))
             return False
 
-    def writeFile(self, data, name): # write our scrapped ranking
+    def writeFile(self, data, name): # write our scraped ranking
         try:
             with open(name, 'w') as outfile:
                 json.dump(data, outfile)
@@ -177,7 +177,7 @@ class Scrapper():
             for i in range(2, last+1): # queue the pages to retrieve
                 q.put(i)
 
-            print("Scrapping...")
+            print("Scraping...")
             for i in range(self.max_threads): # make lot of threads
                 worker = Thread(target=self.crewProcess, args=(q, results))
                 worker.setDaemon(True)
@@ -205,7 +205,7 @@ class Scrapper():
             for i in range(2, last+1):
                 q.put(i)
 
-            print("Scrapping...")
+            print("Scraping...")
             for i in range(self.max_threads):
                 worker = Thread(target=self.playerProcess, args=(q, results))
                 worker.setDaemon(True)
@@ -621,7 +621,7 @@ class Scrapper():
                 return
 
 # we start here
-print("GW Ranking Scrapper 1.7")
+print("GW Ranking Scraper 1.7")
 # gw num
 while True:
     try:
@@ -631,7 +631,7 @@ while True:
         pass
 # init
 try:
-    scrapper = Scrapper(i)
+    scraper = Scraper(i)
 except Exception as e:
     print(e)
     exit(0)
@@ -641,46 +641,46 @@ while True:
         print("\nMain Menu\n[0] Download Crew\n[1] Download Player\n[2] Download All\n[3] Compile Crew Data\n[4] Compile Player Data\n[5] Build Database\n[6] Build Crew Lists\n[7] Build Crew Ranking\n[8] Build Player Ranking\n[9] Compile and Build all\n[10] Advanced\n[Any] Quit")
         i = input("Input: ")
         print('')
-        if i == "0": scrapper.run(1)
-        elif i == "1": scrapper.run(2)
-        elif i == "2": scrapper.run(0)
-        elif i == "3": scrapper.buildGW(1)
-        elif i == "4": scrapper.buildGW(2)
-        elif i == "5": scrapper.makedb()
-        elif i == "6": scrapper.build_crew_list()
-        elif i == "7": scrapper.build_crew_ranking_list()
-        elif i == "8": scrapper.build_player_list()
+        if i == "0": scraper.run(1)
+        elif i == "1": scraper.run(2)
+        elif i == "2": scraper.run(0)
+        elif i == "3": scraper.buildGW(1)
+        elif i == "4": scraper.buildGW(2)
+        elif i == "5": scraper.makedb()
+        elif i == "6": scraper.build_crew_list()
+        elif i == "7": scraper.build_crew_ranking_list()
+        elif i == "8": scraper.build_player_list()
         elif i == "9":
             print("[0/6] Compiling Data")
-            scrapper.buildGW()
+            scraper.buildGW()
             print("[1/6] Building a SQL database")
-            scrapper.makedb()
+            scraper.makedb()
             print("[2/6] Updating /gbfg/ data")
-            scrapper.downloadGbfg()
-            scrapper.buildGbfgFile()
+            scraper.downloadGbfg()
+            scraper.buildGbfgFile()
             print("[3/6] Building crew .csv files")
-            scrapper.build_crew_list()
+            scraper.build_crew_list()
             print("[4/6] Building the crew ranking .csv file")
-            scrapper.build_crew_ranking_list()
+            scraper.build_crew_ranking_list()
             print("[5/6] Building the player ranking .csv file")
-            scrapper.build_player_list()
+            scraper.build_player_list()
             print("[6/6] Complete")
         elif i == "10":
             while True:
                 print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary Crew Lists\n[2] Build Temporary /gbfg/ Ranking\n[3] Download /gbfg/ member list\n[4] Download a crew member list\n[5] Make Temporary MizaBOT database\n[6] Make Final MizaBOT database\n[Any] Quit")
                 i = input("Input: ")
                 print('')
-                if i == "0": scrapper.buildGbfgFile()
+                if i == "0": scraper.buildGbfgFile()
                 elif i == "1":
                     days = ['prelim', 'd1', 'd2', 'd3']
                     print("Input the current day (Leave blank to cancel):", days)
                     i = input("Input: ")
                     if i == "": pass
                     elif i not in days: print("Invalid day")
-                    else: scrapper.build_crew_list(i)
-                elif i == "2": scrapper.build_temp_crew_ranking_list()
-                elif i == "3": scrapper.downloadGbfg()
-                elif i == "3": scrapper.downloadGbfg()
+                    else: scraper.build_crew_list(i)
+                elif i == "2": scraper.build_temp_crew_ranking_list()
+                elif i == "3": scraper.downloadGbfg()
+                elif i == "3": scraper.downloadGbfg()
                 elif i == "4":
                     print("Please input the crew(s) id (Leave blank to cancel)")
                     i = input("Input: ")
@@ -692,7 +692,7 @@ while True:
                             l = []
                             for x in i: l.append(int(x))
                             print(l)
-                            scrapper.downloadGbfg(*l)
+                            scraper.downloadGbfg(*l)
                         except: print("Please input a number")
                 elif i == "5": 
                     days = ['prelim', 'd1', 'd2', 'd3']
@@ -700,11 +700,11 @@ while True:
                     i = input("Input: ")
                     if i == "": pass
                     elif i not in days: print("Invalid day")
-                    else: scrapper.makebotdb(days.index(i) + 1)
-                elif i == "6": scrapper.makebotdb(0)
+                    else: scraper.makebotdb(days.index(i) + 1)
+                elif i == "6": scraper.makebotdb(0)
                 else: break
-                scrapper.save()
+                scraper.save()
         else: exit(0)
     except Exception as e:
         print("Critical error:", e)
-    scrapper.save()
+    scraper.save()
