@@ -437,6 +437,49 @@ class Scraper():
                 llwriter.writerow(row)
             print("GW{}_Crews.csv: Done".format(self.gw))
 
+    def build_crew_list_no_sorting(self): # build the gbfg leechlists on a .csv format (without sorting)
+        remove_punctuation_map = dict((ord(char), None) for char in '\/*?:"<>|')
+        try:
+            with open('gbfg.json') as f:
+                gbfg = json.load(f)
+            with open('GW{}_player_full.json'.format(self.gw)) as f:
+                players = json.load(f)
+        except Exception as e:
+            print("Error:", e)
+            return
+        # one crew by one
+        for c in gbfg:
+            if 'private' in gbfg[c]: continue # ignore private crews
+            with open("GW{}_{}.csv".format(self.gw, gbfg[c]['name'].translate(remove_punctuation_map)), 'w', newline='', encoding="utf-8") as csvfile:
+                llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_MINIMAL)
+                llwriter.writerow(["", "#", "id", "name", "rank", "battle", "preliminaries", "interlude & day 1", "total 1", "day 2", "total 2", "day 3", "total 3", "day 4", "total 4"])
+                l = []
+                for p in gbfg[c]['player']:
+                    if str(p['id']) in players:
+                        if p['is_leader']: players[str(p['id'])]['name'] += " (c)"
+                        l.append(players[str(p['id'])])
+                        l[-1]['id'] = str(p['id'])
+                    else: l.append(p)
+                crew_size = len(l)
+                total = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                for i in range(0, crew_size):
+                    llwriter.writerow([str(i+1), l[i].get('rank', 'n/a'), l[i]['id'], l[i]['name'], l[i]['level'], l[i].get('defeat', 'n/a'), l[i].get('prelim', 'n/a'), l[i].get('delta_d1', 'n/a'), l[i].get('d1', 'n/a'), l[i].get('delta_d2', 'n/a'), l[i].get('d2', 'n/a'), l[i].get('delta_d3', 'n/a'), l[i].get('d3', 'n/a'), l[i].get('delta_d4', 'n/a'), l[i].get('d4', 'n/a')])
+                    total[0] += int(l[i]['level'])
+                    total[1] += int(l[i].get('prelim', '0'))
+                    total[2] += int(l[i].get('delta_d1', '0'))
+                    total[3] += int(l[i].get('d1', '0'))
+                    total[4] += int(l[i].get('delta_d2', '0'))
+                    total[5] += int(l[i].get('d2', '0'))
+                    total[6] += int(l[i].get('delta_d3', '0'))
+                    total[7] += int(l[i].get('d3', '0'))
+                    total[8] += int(l[i].get('delta_d4', '0'))
+                    total[9] += int(l[i].get('d4', '0'))
+                llwriter.writerow(['', '', '', 'average', str(total[0]//crew_size), '', '', '', '', '', '', '', '', '', ''])
+                llwriter.writerow(['', '', '', 'total', '', '', str(total[1]), str(total[2]), str(total[3]), str(total[4]), str(total[5]), str(total[6]), str(total[7]), str(total[8]), str(total[9])])
+                llwriter.writerow(['', '', '', '', '', '', '', '', '', '', '', '', '', '', ''])
+                llwriter.writerow(['', 'guild', str(c), gbfg[c]['name'], '', '', '', '', '', '', '', '', '', '', ''])
+                print("GW{}_{}.csv: Done".format(self.gw, gbfg[c]['name'].translate(remove_punctuation_map)))
+
     def build_crew_ranking_list(self): # build the ranking of all the gbfg crews
         try:
             with open('gbfg.json') as f:
@@ -702,6 +745,7 @@ while True:
                     elif i not in days: print("Invalid day")
                     else: scraper.makebotdb(days.index(i) + 1)
                 elif i == "6": scraper.makebotdb(0)
+                elif i == "7": scraper.build_crew_list_no_sorting()
                 else: break
                 scraper.save()
         else: exit(0)
