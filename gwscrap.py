@@ -129,9 +129,9 @@ class Scraper():
         while not q.empty():
             page = q.get()
             data = None
-            while data is None:
+            while data is None or data['count'] == False:
                 data = self.requestRanking(page, True)
-                if data is None: print("Crew: Error on page", page)
+                if data is None or data['count'] == False: print("Crew: Error on page", page)
             for i in range(0, len(data['list'])):
                 results[int(data['list'][i]['ranking'])-1] = data['list'][i]
             q.task_done()
@@ -141,9 +141,9 @@ class Scraper():
         while not q.empty():
             page = q.get()
             data = None
-            while data is None:
+            while data is None or data['count'] == False:
                 data = self.requestRanking(page, False)
-                if data is None: print("Player: Error on page", page)
+                if data is None or data['count'] == False: print("Player: Error on page", page)
             for i in range(0, len(data['list'])):
                 results[int(data['list'][i]['rank'])-1] = data['list'][i]
             q.task_done()
@@ -162,7 +162,7 @@ class Scraper():
         if mode == 0 or mode == 1:
             # crew ranking
             data = self.requestRanking(1, True) # get the first page
-            if data is None:
+            if data is None or data['count'] == False:
                 print("Can't access the crew ranking")
                 self.save()
                 return
@@ -190,7 +190,7 @@ class Scraper():
         if mode == 0 or mode == 2:
             # player ranking. exact same thing, I lazily copypasted.
             data = self.requestRanking(1, False)
-            if data is None:
+            if data is None or data['count'] == False:
                 print("Can't access the player ranking")
                 self.save()
                 return
