@@ -18,7 +18,7 @@ from os.path import isfile, join
 class Scraper():
     def __init__(self, gw_num : int): # constructor requires the gw number
         if gw_num < 1 or gw_num > 999: raise Exception("Invalid GW ID")
-        self.gbfg_ids = ["645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1593480", "472465", "1586134", "1161924", "432330", "1380234", "1629318", "1601132", "678459",  "632242", "632242", "1141898", "1580990", "588156", "581111", "1010961", "418206", "1744673", "1807204"]
+        self.gbfg_ids = ["645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1593480", "472465", "1586134", "1161924", "432330", "1380234", "1629318", "1601132", "678459",  "632242", "632242", "1141898", "1580990", "588156", "581111", "1010961", "418206", "1744673", "1807204", "844716", "1837508"]
         
         self.gw = gw_num
         self.max_threads = 100 # change this if needed
@@ -345,7 +345,7 @@ class Scraper():
         for c in gbfg:
             if 'private' in gbfg[c]: continue # ignore private crews
             with open("GW{}_{}.csv".format(self.gw, gbfg[c]['name'].translate(remove_punctuation_map)), 'w', newline='', encoding="utf-8") as csvfile:
-                llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_MINIMAL)
+                llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
                 llwriter.writerow(["", "#", "id", "name", "rank", "battle", "preliminaries", "interlude & day 1", "total 1", "day 2", "total 2", "day 3", "total 3", "day 4", "total 4"])
                 l = []
                 for p in gbfg[c]['player']:
@@ -372,7 +372,8 @@ class Scraper():
                                 mini = int(l[li][temp])
                                 idx = li
                     if idx != -1:
-                        llwriter.writerow([str(i+1), l[idx].get('rank', 'n/a'), l[idx]['id'], l[idx]['name'], l[idx]['level'], l[idx].get('defeat', 'n/a'), l[idx].get('prelim', 'n/a'), l[idx].get('delta_d1', 'n/a'), l[idx].get('d1', 'n/a'), l[idx].get('delta_d2', 'n/a'), l[idx].get('d2', 'n/a'), l[idx].get('delta_d3', 'n/a'), l[idx].get('d3', 'n/a'), l[idx].get('delta_d4', 'n/a'), l[idx].get('d4', 'n/a')])
+                        pname = l[idx]['name'].replace('"', '\\"')
+                        llwriter.writerow([str(i+1), l[idx].get('rank', 'n/a'), l[idx]['id'], pname, l[idx]['level'], l[idx].get('defeat', 'n/a'), l[idx].get('prelim', 'n/a'), l[idx].get('delta_d1', 'n/a'), l[idx].get('d1', 'n/a'), l[idx].get('delta_d2', 'n/a'), l[idx].get('d2', 'n/a'), l[idx].get('delta_d3', 'n/a'), l[idx].get('d3', 'n/a'), l[idx].get('delta_d4', 'n/a'), l[idx].get('d4', 'n/a')])
                         total[0] += int(l[idx]['level'])
                         total[1] += int(l[idx].get('prelim', '0'))
                         total[2] += int(l[idx].get('delta_d1', '0'))
@@ -385,17 +386,19 @@ class Scraper():
                         total[9] += int(l[idx].get('d4', '0'))
                         l.pop(idx)
                     else:
+                        pname = l[0]['name'].replace('"', '\\"')
                         for p in gbfg[c]['player']:
                             if l[0]['id'] == p['id']:
-                                if p['is_leader']: l[0]['name'] += " (c)"
+                                if p['is_leader']: pname += " (c)"
                                 break
-                        llwriter.writerow([str(i+1), 'n/a', l[0]['id'], l[0]['name'], l[0]['level'], 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a'])
+                        llwriter.writerow([str(i+1), 'n/a', l[0]['id'], pname, l[0]['level'], 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a'])
                         total[0] += int(l[0]['level'])
                         l.pop(0)
                 llwriter.writerow(['', '', '', 'average', str(total[0]//crew_size), '', '', '', '', '', '', '', '', '', ''])
                 llwriter.writerow(['', '', '', 'total', '', '', str(total[1]), str(total[2]), str(total[3]), str(total[4]), str(total[5]), str(total[6]), str(total[7]), str(total[8]), str(total[9])])
                 llwriter.writerow(['', '', '', '', '', '', '', '', '', '', '', '', '', '', ''])
-                llwriter.writerow(['', 'guild', str(c), gbfg[c]['name'], '', '', '', '', '', '', '', '', '', '', ''])
+                gname = gbfg[c]['name'].replace('"', '\\"')
+                llwriter.writerow(['', 'guild', str(c), gname, '', '', '', '', '', '', '', '', '', '', ''])
                 print("GW{}_{}.csv: Done".format(self.gw, gbfg[c]['name'].translate(remove_punctuation_map)))
 
     def build_temp_crew_ranking_list(self): # same thing but while gw is on going (work a bit differently, useful for scouting enemies)
@@ -406,13 +409,14 @@ class Scraper():
             print("Error:", e)
             return
         with open("GW{}_Crews.csv".format(self.gw), 'w', newline='', encoding="utf-8") as csvfile:
-            llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_MINIMAL)
+            llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
             llwriter.writerow(["", "#", "id", "name", "preliminaries", "day 1", "day 2", "day 3", "day 4", "total"])
             ranked = []
             unranked = []
             for c in self.gbfg_ids:
                 if c in crews:
-                    row = [crews[c].get('ranking', 'n/a'), c, crews[c]['name']]
+                    gname = crews[c]['name'].replace('"', '\\"')
+                    row = [crews[c].get('ranking', 'n/a'), c, gname]
                     row.append(crews[c].get('prelim', 'n/a'))
                     row.append(crews[c].get('delta_d1', 'n/a'))
                     row.append(crews[c].get('delta_d2', 'n/a'))
@@ -452,7 +456,7 @@ class Scraper():
         for c in gbfg:
             if 'private' in gbfg[c]: continue # ignore private crews
             with open("GW{}_{}.csv".format(self.gw, gbfg[c]['name'].translate(remove_punctuation_map)), 'w', newline='', encoding="utf-8") as csvfile:
-                llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_MINIMAL)
+                llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
                 llwriter.writerow(["", "#", "id", "name", "rank", "battle", "preliminaries", "interlude & day 1", "total 1", "day 2", "total 2", "day 3", "total 3", "day 4", "total 4"])
                 l = []
                 for p in gbfg[c]['player']:
@@ -464,7 +468,8 @@ class Scraper():
                 crew_size = len(l)
                 total = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
                 for i in range(0, crew_size):
-                    llwriter.writerow([str(i+1), l[i].get('rank', 'n/a'), l[i]['id'], l[i]['name'], l[i]['level'], l[i].get('defeat', 'n/a'), l[i].get('prelim', 'n/a'), l[i].get('delta_d1', 'n/a'), l[i].get('d1', 'n/a'), l[i].get('delta_d2', 'n/a'), l[i].get('d2', 'n/a'), l[i].get('delta_d3', 'n/a'), l[i].get('d3', 'n/a'), l[i].get('delta_d4', 'n/a'), l[i].get('d4', 'n/a')])
+                    pname = l[i]['name'].replace('"', '\\"')
+                    llwriter.writerow([str(i+1), l[i].get('rank', 'n/a'), l[i]['id'], pname, l[i]['level'], l[i].get('defeat', 'n/a'), l[i].get('prelim', 'n/a'), l[i].get('delta_d1', 'n/a'), l[i].get('d1', 'n/a'), l[i].get('delta_d2', 'n/a'), l[i].get('d2', 'n/a'), l[i].get('delta_d3', 'n/a'), l[i].get('d3', 'n/a'), l[i].get('delta_d4', 'n/a'), l[i].get('d4', 'n/a')])
                     total[0] += int(l[i]['level'])
                     total[1] += int(l[i].get('prelim', '0'))
                     total[2] += int(l[i].get('delta_d1', '0'))
@@ -478,7 +483,8 @@ class Scraper():
                 llwriter.writerow(['', '', '', 'average', str(total[0]//crew_size), '', '', '', '', '', '', '', '', '', ''])
                 llwriter.writerow(['', '', '', 'total', '', '', str(total[1]), str(total[2]), str(total[3]), str(total[4]), str(total[5]), str(total[6]), str(total[7]), str(total[8]), str(total[9])])
                 llwriter.writerow(['', '', '', '', '', '', '', '', '', '', '', '', '', '', ''])
-                llwriter.writerow(['', 'guild', str(c), gbfg[c]['name'], '', '', '', '', '', '', '', '', '', '', ''])
+                gname = gbfg[c]['name'].replace('"', '\\"')
+                llwriter.writerow(['', 'guild', str(c), gname, '', '', '', '', '', '', '', '', '', '', ''])
                 print("GW{}_{}.csv: Done".format(self.gw, gbfg[c]['name'].translate(remove_punctuation_map)))
 
     def build_crew_ranking_list(self): # build the ranking of all the gbfg crews
@@ -491,12 +497,13 @@ class Scraper():
             print("Error:", e)
             return
         with open("GW{}_Crews.csv".format(self.gw), 'w', newline='', encoding="utf-8") as csvfile:
-            llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_MINIMAL)
+            llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
             llwriter.writerow(["", "#", "id", "name", "preliminaries", "day 1", "day 2", "day 3", "day 4", "final"])
             ranked = []
             unranked = []
             for c in gbfg:
-                row = ['', c, gbfg[c]['name']]
+                gname = gbfg[c]['name'].replace('"', '\\"')
+                row = ['', c, gname]
                 if c in crews:
                     row[0] = crews[c].get('ranking', 'n/a')
                     row.append(crews[c].get('prelim', 'n/a'))
@@ -505,7 +512,7 @@ class Scraper():
                     row.append(crews[c].get('delta_d3', 'n/a'))
                     row.append(crews[c].get('delta_d4', 'n/a'))
                     row.append(crews[c].get('d4', 'n/a'))
-                else: row = ['n/a', c, gbfg[c]['name'], 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a']
+                else: row = ['n/a', c, gname, 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a']
                 if row[0] == 'n/a': unranked.append(row)
                 elif len(ranked) == 0: ranked.append(row)
                 else:
@@ -553,10 +560,12 @@ class Scraper():
                         l[-1]['guild'] = gbfg[c]['name']
         if len(l) > 0:
             with open("GW{}_Players.csv".format(self.gw), 'w', newline='', encoding="utf-8") as csvfile:
-                llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_MINIMAL)
+                llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
                 llwriter.writerow(["", "#", "id", "name", "guild", "rank", "battle", "preliminaries", "interlude & day 1", "total 1", "day 2", "total 2", "day 3", "total 3", "day 4", "total 4"])
                 for i in range(0, len(l)):
-                    llwriter.writerow([str(i+1), l[i].get('rank', 'n/a'), l[i]['id'], l[i]['name'], l[i]['guild'], l[i]['level'], l[i].get('defeat', 'n/a'), l[i].get('prelim', 'n/a'), l[i].get('delta_d1', 'n/a'), l[i].get('d1', 'n/a'), l[i].get('delta_d2', 'n/a'), l[i].get('d2', 'n/a'), l[i].get('delta_d3', 'n/a'), l[i].get('d3', 'n/a'), l[i].get('delta_d4', 'n/a'), l[i].get('d4', 'n/a')])
+                    pname = l[i]['name'].replace('"', '\\"')
+                    gname = l[i]['guild'].replace('"', '\\"')
+                    llwriter.writerow([str(i+1), l[i].get('rank', 'n/a'), l[i]['id'], pname, gname, l[i]['level'], l[i].get('defeat', 'n/a'), l[i].get('prelim', 'n/a'), l[i].get('delta_d1', 'n/a'), l[i].get('d1', 'n/a'), l[i].get('delta_d2', 'n/a'), l[i].get('d2', 'n/a'), l[i].get('delta_d3', 'n/a'), l[i].get('d3', 'n/a'), l[i].get('delta_d4', 'n/a'), l[i].get('d4', 'n/a')])
             print("GW{}_Players.csv: Done".format(self.gw))
 
     def buildGbfgFile(self): # check the gbfg folder for any json files and fuse the data into one
@@ -665,7 +674,7 @@ class Scraper():
                 return
 
 # we start here
-print("GW Ranking Scraper 1.7")
+print("GW Ranking Scraper 1.8")
 # gw num
 while True:
     try:
