@@ -18,7 +18,7 @@ from os.path import isfile, join
 class Scraper():
     def __init__(self, gw_num : int): # constructor requires the gw number
         if gw_num < 1 or gw_num > 999: raise Exception("Invalid GW ID")
-        self.gbfg_ids = ["645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1593480", "472465", "1586134", "1161924", "432330", "1380234", "1629318", "1601132", "678459",  "632242", "632242", "1141898", "1580990", "588156", "581111", "1010961", "418206", "1744673", "1807204", "844716", "1837508"]
+        self.gbfg_ids = ["645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1593480", "472465", "1586134", "1161924", "432330", "1380234", "1629318", "1601132", "678459",  "632242", "632242", "1141898", "1580990", "588156", "581111", "1010961", "418206", "1744673", "1807204", "844716", "1837508", "1880420"]
         
         self.gw = gw_num
         self.max_threads = 100 # change this if needed
@@ -622,8 +622,6 @@ class Scraper():
             except: pass
             return json.loads(zlib.decompress(url_handle.read(), 16+zlib.MAX_WBITS))
         except Exception as e:
-            if str(e) != "Expecting value: line 1 column 1 (char 0)":
-                print(e)
             return None
 
     def downloadGbfg(self, *ids : int): # download all the gbfg crew member lists and make a json file in the gbfg folder
@@ -674,7 +672,7 @@ class Scraper():
                 return
 
 # we start here
-print("GW Ranking Scraper 1.8")
+print("GW Ranking Scraper 1.9")
 # gw num
 while True:
     try:
@@ -732,7 +730,6 @@ while True:
                     elif i not in days: print("Invalid day")
                     else: scraper.build_crew_list(i)
                 elif i == "2": scraper.build_temp_crew_ranking_list()
-                elif i == "3": scraper.downloadGbfg()
                 elif i == "3": scraper.downloadGbfg()
                 elif i == "4":
                     print("Please input the crew(s) id (Leave blank to cancel)")
