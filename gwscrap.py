@@ -18,7 +18,7 @@ from os.path import isfile, join
 class Scraper():
     def __init__(self, gw_num : int): # constructor requires the gw number
         if gw_num < 1 or gw_num > 999: raise Exception("Invalid GW ID")
-        self.gbfg_ids = ["645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1593480", "472465", "1586134", "1161924", "432330", "1380234", "1629318", "1601132", "678459",  "632242", "632242", "1141898", "1580990", "588156", "581111", "1010961", "418206", "1744673", "1807204", "844716", "1837508", "1880420"]
+        self.gbfg_ids = ["1744673", "645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1807204", "472465", "1161924", "432330", "1629318", "1837508", "1880420", "678459", "632242", "1141898", "1380234", "1601132", "1580990", "844716", "581111", "1010961"]
         
         self.gw = gw_num
         self.max_threads = 100 # change this if needed
@@ -181,7 +181,7 @@ class Scraper():
             print("Scraping...")
             for i in range(self.max_threads): # make lot of threads
                 worker = Thread(target=self.crewProcess, args=(q, results))
-                worker.setDaemon(True)
+                worker.daemon = True
                 worker.start()
             q.join() # wait for them to finish
 
@@ -209,7 +209,7 @@ class Scraper():
             print("Scraping...")
             for i in range(self.max_threads):
                 worker = Thread(target=self.playerProcess, args=(q, results))
-                worker.setDaemon(True)
+                worker.daemon = True
                 worker.start()
             q.join()
 
@@ -442,7 +442,7 @@ class Scraper():
                 llwriter.writerow(row)
             print("GW{}_Crews.csv: Done".format(self.gw))
 
-    def build_crew_list_no_sorting(self): # build the gbfg leechlists on a .csv format (without sorting)
+    def build_crew_list_no_sorting(self): # build the (You) leechlist on a .csv format (without sorting)
         remove_punctuation_map = dict((ord(char), None) for char in '\/*?:"<>|')
         try:
             with open('gbfg.json') as f:
@@ -454,6 +454,7 @@ class Scraper():
             return
         # one crew by one
         for c in gbfg:
+            if c not in ["581111"]: continue
             if 'private' in gbfg[c]: continue # ignore private crews
             with open("GW{}_{}.csv".format(self.gw, gbfg[c]['name'].translate(remove_punctuation_map)), 'w', newline='', encoding="utf-8") as csvfile:
                 llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
@@ -672,7 +673,7 @@ class Scraper():
                 return
 
 # we start here
-print("GW Ranking Scraper 1.9")
+print("GW Ranking Scraper 1.10")
 # gw num
 while True:
     try:
