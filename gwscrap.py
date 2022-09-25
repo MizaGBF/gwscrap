@@ -23,7 +23,7 @@ class Scraper():
         self.gw = gw_num
         self.max_threads = 100 # change this if needed
         # preparing urls
-        base_url = "http://game.granbluefantasy.jp/teamraid" + str(gw_num).zfill(3)
+        base_url = "https://game.granbluefantasy.jp/teamraid" + str(gw_num).zfill(3)
         self.crew_url = base_url + "/rest/ranking/totalguild/detail/{}/0?_={}&t={}&uid={}"
         self.player_url = base_url + "/rest_ranking_user/detail/{}/0?_={}&t={}&uid={}"
         # empty save data
@@ -73,7 +73,7 @@ class Scraper():
 
     def getGameversion(self): # get the game version
         try:
-            req = request.Request('http://game.granbluefantasy.jp/')
+            req = request.Request('https://game.granbluefantasy.jp/')
             req.add_header('Host', 'game.granbluefantasy.jp')
             req.add_header('User-Agent', self.data['user_agent'])
             req.add_header('Accept-Encoding', 'gzip, deflate')
@@ -107,8 +107,8 @@ class Scraper():
             if crew: req = request.Request(self.crew_url.format(page, ts, ts+300, self.data['id']))
             else: req = request.Request(self.player_url.format(page, ts, ts+300, self.data['id']))
             req.add_header('Cookie', self.data['cookie'])
-            req.add_header('Referer', 'http://game.granbluefantasy.jp/')
-            req.add_header('Origin', 'http://game.granbluefantasy.jp')
+            req.add_header('Referer', 'https://game.granbluefantasy.jp/')
+            req.add_header('Origin', 'https://game.granbluefantasy.jp')
             req.add_header('Host', 'game.granbluefantasy.jp')
             req.add_header('User-Agent', self.data['user_agent'])
             req.add_header('X-Requested-With', 'XMLHttpRequest')
@@ -598,8 +598,8 @@ class Scraper():
         else:
             req = request.Request(url, data=str(json.dumps(payload)).encode('utf-8'))
         req.add_header('Cookie', self.data['cookie'])
-        req.add_header('Referer', 'http://game.granbluefantasy.jp/')
-        req.add_header('Origin', 'http://game.granbluefantasy.jp')
+        req.add_header('Referer', 'https://game.granbluefantasy.jp/')
+        req.add_header('Origin', 'https://game.granbluefantasy.jp')
         req.add_header('Host', 'game.granbluefantasy.jp')
         req.add_header('User-Agent', str(self.data['user_agent']))
         req.add_header('X-Requested-With', 'XMLHttpRequest')
@@ -615,9 +615,9 @@ class Scraper():
         try:
             ts = int(datetime.utcnow().timestamp() * 1000)
             if page == 0:
-                req = self.buildRequest("http://game.granbluefantasy.jp/guild_other/guild_info/{}?_={}&t={}&uid={}".format(id, ts, ts+300, self.data['id']))
+                req = self.buildRequest("https://game.granbluefantasy.jp/guild_other/guild_info/{}?_={}&t={}&uid={}".format(id, ts, ts+300, self.data['id']))
             else:
-                req = self.buildRequest("http://game.granbluefantasy.jp/guild_other/member_list/{}/{}?_={}&t={}&uid={}".format(page, id, ts, ts+300, self.data['id']))
+                req = self.buildRequest("https://game.granbluefantasy.jp/guild_other/member_list/{}/{}?_={}&t={}&uid={}".format(page, id, ts, ts+300, self.data['id']))
             url_handle = request.urlopen(req)
             try: self.updateCookie(url_handle.info()['Set-Cookie'])
             except: pass
