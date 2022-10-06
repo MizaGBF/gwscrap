@@ -1,9 +1,8 @@
 ﻿from datetime import datetime, timedelta, timezone
-from urllib.request import urlopen
-from urllib import request, parse
+import httpx
+from urllib import parse
 from socket import timeout
 import json
-import zlib
 import time
 import re
 from threading import Thread
@@ -20,6 +19,7 @@ class Scraper():
         if gw_num < 1 or gw_num > 999: raise Exception("Invalid GW ID")
         self.gbfg_ids = ["1744673", "645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1807204", "472465", "1161924", "432330", "1629318", "1837508", "1880420", "678459", "632242", "1141898", "1380234", "1601132", "1580990", "844716", "581111", "1010961"]
         
+        self.client = httpx.Client(http2=True)
         self.gw = gw_num
         self.max_threads = 100 # change this if needed
         # preparing urls
@@ -73,14 +73,9 @@ class Scraper():
 
     def getGameversion(self): # get the game version
         try:
-            req = request.Request('https://game.granbluefantasy.jp/')
-            req.add_header('Host', 'game.granbluefantasy.jp')
-            req.add_header('User-Agent', self.data['user_agent'])
-            req.add_header('Accept-Encoding', 'gzip, deflate')
-            req.add_header('Accept-Language', 'en')
-            req.add_header('Connection', 'keep-alive')
-            url_handle = request.urlopen(req)
-            res = self.vregex.findall(str(zlib.decompress(url_handle.read(), 16+zlib.MAX_WBITS)))
+            response = self.client.get('https://game.granbluefantasy.jp/', headers={'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive'})
+            if response.status_code != 200: raise Exception()
+            res = self.vregex.findall(response.content.decode('utf-8'))
             return int(res[0]) # to check if digit
         except:
             return None
@@ -104,25 +99,13 @@ class Scraper():
     def requestRanking(self, page, crew = True): # request a ranking page and return the data
         try:
             ts = int(datetime.utcnow().timestamp() * 1000)
-            if crew: req = request.Request(self.crew_url.format(page, ts, ts+300, self.data['id']))
-            else: req = request.Request(self.player_url.format(page, ts, ts+300, self.data['id']))
-            req.add_header('Cookie', self.data['cookie'])
-            req.add_header('Referer', 'https://game.granbluefantasy.jp/')
-            req.add_header('Origin', 'https://game.granbluefantasy.jp')
-            req.add_header('Host', 'game.granbluefantasy.jp')
-            req.add_header('User-Agent', self.data['user_agent'])
-            req.add_header('X-Requested-With', 'XMLHttpRequest')
-            req.add_header('X-VERSION', self.version)
-            req.add_header('Accept', 'application/json, text/javascript, */*; q=0.01')
-            req.add_header('Accept-Encoding', 'gzip, deflate')
-            req.add_header('Accept-Language', 'en')
-            req.add_header('Connection', 'keep-alive')
-            req.add_header('Content-Type', 'application/json')
-            url_handle = request.urlopen(req)
-            try: self.updateCookie(url_handle.info()['Set-Cookie'])
+            if crew: url = self.crew_url.format(page, ts, ts+300, self.data['id'])
+            else: url = self.player_url.format(page, ts, ts+300, self.data['id'])
+            response = self.client.get(url, headers={'Cookie': self.data['cookie'], 'Referer': 'https://game.granbluefantasy.jp/', 'Origin': 'https://game.granbluefantasy.jp', 'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'X-Requested-With': 'XMLHttpRequest', 'X-VERSION': self.version, 'Accept': 'application/json, text/javascript, */*; q=0.01', 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive', 'Content-Type': 'application/json'})
+            if response.status_code != 200: raise Exception()
+            try: self.updateCookie(response.headers['set-cookie'])
             except: pass
-            decompressed_data=zlib.decompress(url_handle.read(), 16+zlib.MAX_WBITS)
-            return json.loads(decompressed_data)
+            return response.json()
         except:
             return None
 
@@ -154,7 +137,7 @@ class Scraper():
         # user check
         input("Make sure you won't overwrite a file (Press anything to continue): ")
         # check the game version
-        self.version = self.getGameversion()
+        self.version = str(self.getGameversion())
         if self.version is None:
             print("Impossible to get the game version currently")
             return
@@ -593,23 +576,13 @@ class Scraper():
             print("Failed: ", e)
 
     def buildRequest(self, url, payload=None): # to request stuff to gbf
+        headers = {'Cookie': self.data['cookie'], 'Referer': 'https://game.granbluefantasy.jp/', 'Origin': 'https://game.granbluefantasy.jp', 'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'X-Requested-With': 'XMLHttpRequest', 'X-VERSION': self.version, 'Accept': 'application/json, text/javascript, */*; q=0.01', 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive', 'Content-Type': 'application/json'}
         if payload is None:
-            req = request.Request(url)
+            response = self.client.get(url, headers=headers)
         else:
-            req = request.Request(url, data=str(json.dumps(payload)).encode('utf-8'))
-        req.add_header('Cookie', self.data['cookie'])
-        req.add_header('Referer', 'https://game.granbluefantasy.jp/')
-        req.add_header('Origin', 'https://game.granbluefantasy.jp')
-        req.add_header('Host', 'game.granbluefantasy.jp')
-        req.add_header('User-Agent', str(self.data['user_agent']))
-        req.add_header('X-Requested-With', 'XMLHttpRequest')
-        req.add_header('X-VERSION', str(self.version))
-        req.add_header('Accept', 'application/json, text/javascript, */*; q=0.01')
-        req.add_header('Accept-Encoding', 'gzip, deflate')
-        req.add_header('Accept-Language', 'en')
-        req.add_header('Connection', 'keep-alive')
-        req.add_header('Content-Type', 'application/json')
-        return req
+            response = self.client.post(url, headers=headers, data=payload)
+        if response.status_code != 200: raise Exception()
+        return response
 
     def requestCrew(self, id, page): # request a crew info, page 0 = main page, page 1-3 = member pages
         try:
@@ -618,10 +591,9 @@ class Scraper():
                 req = self.buildRequest("https://game.granbluefantasy.jp/guild_other/guild_info/{}?_={}&t={}&uid={}".format(id, ts, ts+300, self.data['id']))
             else:
                 req = self.buildRequest("https://game.granbluefantasy.jp/guild_other/member_list/{}/{}?_={}&t={}&uid={}".format(page, id, ts, ts+300, self.data['id']))
-            url_handle = request.urlopen(req)
-            try: self.updateCookie(url_handle.info()['Set-Cookie'])
+            try: self.updateCookie(req.headers['set-cookie'])
             except: pass
-            return json.loads(zlib.decompress(url_handle.read(), 16+zlib.MAX_WBITS))
+            return req.json()
         except Exception as e:
             return None
 
@@ -673,7 +645,7 @@ class Scraper():
                 return
 
 # we start here
-print("GW Ranking Scraper 1.10")
+print("GW Ranking Scraper 1.11")
 # gw num
 while True:
     try:
