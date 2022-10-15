@@ -19,7 +19,8 @@ class Scraper():
         if gw_num < 1 or gw_num > 999: raise Exception("Invalid GW ID")
         self.gbfg_ids = ["1744673", "645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1807204", "472465", "1161924", "432330", "1629318", "1837508", "1880420", "678459", "632242", "1141898", "1380234", "1601132", "1580990", "844716", "581111", "1010961"]
         
-        self.client = httpx.Client(http2=True)
+        limits = httpx.Limits(max_keepalive_connections=100, max_connections=100, keepalive_expiry=10)
+        self.client = httpx.Client(http2=True, limits=limits)
         self.gw = gw_num
         self.max_threads = 100 # change this if needed
         # preparing urls
