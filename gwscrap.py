@@ -5,7 +5,8 @@ from socket import timeout
 import json
 import time
 import re
-from threading import Thread
+from threading import Lock
+import concurrent.futures
 from queue import Queue
 import signal
 import sqlite3
@@ -23,6 +24,7 @@ class Scraper():
         self.client = httpx.Client(http2=True, limits=limits)
         self.gw = gw_num
         self.max_threads = 100 # change this if needed
+        self.lock = Lock()
         # preparing urls
         base_url = "https://game.granbluefantasy.jp/teamraid" + str(gw_num).zfill(3)
         self.crew_url = base_url + "/rest/ranking/totalguild/detail/{}/0?_={}&t={}&uid={}"
@@ -95,7 +97,8 @@ class Scraper():
                     A[i] = c
                     f = True
                     break
-        self.data['cookie'] = ";".join(A)
+        with self.lock:
+            self.data['cookie'] = ";".join(A)
 
     def requestRanking(self, page, crew = True): # request a ranking page and return the data
         try:
@@ -163,11 +166,10 @@ class Scraper():
                 q.put(i)
 
             print("Scraping...")
-            for i in range(self.max_threads): # make lot of threads
-                worker = Thread(target=self.crewProcess, args=(q, results))
-                worker.daemon = True
-                worker.start()
-            q.join() # wait for them to finish
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_threads) as executor:
+                futures = [executor.submit(self.crewProcess, q, results) for i in range(self.max_threads)]
+                for future in concurrent.futures.as_completed(futures):
+                    future.result()
 
             self.writeFile(results, 'GW{}_crew.json'.format(self.gw)) # save the result
             print("Done, saved to 'GW{}_crew.json'".format(self.gw))
@@ -191,10 +193,10 @@ class Scraper():
                 q.put(i)
 
             print("Scraping...")
-            for i in range(self.max_threads):
-                worker = Thread(target=self.playerProcess, args=(q, results))
-                worker.daemon = True
-                worker.start()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_threads) as executor:
+                futures = [executor.submit(self.playerProcess, q, results) for i in range(self.max_threads)]
+                for future in concurrent.futures.as_completed(futures):
+                    future.result()
             q.join()
 
             self.writeFile(results, 'GW{}_player.json'.format(self.gw))
@@ -577,7 +579,7 @@ class Scraper():
             print("Failed: ", e)
 
     def buildRequest(self, url, payload=None): # to request stuff to gbf
-        headers = {'Cookie': self.data['cookie'], 'Referer': 'https://game.granbluefantasy.jp/', 'Origin': 'https://game.granbluefantasy.jp', 'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'X-Requested-With': 'XMLHttpRequest', 'X-VERSION': self.version, 'Accept': 'application/json, text/javascript, */*; q=0.01', 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive', 'Content-Type': 'application/json'}
+        headers = {'Cookie': self.data['cookie'], 'Referer': 'https://game.granbluefantasy.jp/', 'Origin': 'https://game.granbluefantasy.jp', 'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'X-Requested-With': 'XMLHttpRequest', 'X-VERSION': str(self.version), 'Accept': 'application/json, text/javascript, */*; q=0.01', 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive', 'Content-Type': 'application/json'}
         if payload is None:
             response = self.client.get(url, headers=headers)
         else:
@@ -598,6 +600,31 @@ class Scraper():
         except Exception as e:
             return None
 
+    def downloadGbfg_sub(self, id: int): # subroutine
+        crew = {}
+        data = {}
+        for i in range(0, 4):
+            get = self.requestCrew(id, i)
+            if get is None:
+                if i == 0: print('Crew `{}` not found'.format(id))
+                elif i == 1:
+                    print('Crew `{} {}` is private'.format(id, crew['name']))
+                    crew['private'] = None
+                    data[str(id)] = crew
+                else:
+                    data[str(id)] = crew
+                break
+            else:
+                if i == 0:
+                    crew['name'] = get['guild_name']
+                else:
+                    if 'player' not in crew: crew['player'] = []
+                    for p in get['list']:
+                        crew['player'].append({'id':p['id'], 'name':p['name'], 'level':p['level'], 'is_leader':p['is_leader']})
+                if i == 3:
+                    data[str(id)] = crew
+        return data
+
     def downloadGbfg(self, *ids : int): # download all the gbfg crew member lists and make a json file in the gbfg folder
         if len(ids) == 0:
             ids = []
@@ -608,28 +635,15 @@ class Scraper():
         if self.version is None:
             print("Impossible to get the game version currently")
             return
-        for id in ids:
-            crew = {}
-            for i in range(0, 4):
-                get = self.requestCrew(id, i)
-                if get is None:
-                    if i == 0: print('Crew `{}` not found'.format(id))
-                    elif i == 1:
-                        print('Crew `{} {}` is private'.format(id, crew['name']))
-                        crew['private'] = None
-                        data[str(id)] = crew
-                    else:
-                        data[str(id)] = crew
-                    break
-                else:
-                    if i == 0:
-                        crew['name'] = get['guild_name']
-                    else:
-                        if 'player' not in crew: crew['player'] = []
-                        for p in get['list']:
-                            crew['player'].append({'id':p['id'], 'name':p['name'], 'level':p['level'], 'is_leader':p['is_leader']})
-                    if i == 3:
-                        data[str(id)] = crew
+            
+        with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+            futures = []
+            for id in ids:
+                futures.append(executor.submit(self.downloadGbfg_sub, id))
+            for future in concurrent.futures.as_completed(futures):
+                r = future.result()
+                if r is not None:
+                    data = data | r
         if data:
             if not os.path.exists('gbfg'):
                 try: os.makedirs('gbfg')
@@ -646,7 +660,7 @@ class Scraper():
                 return
 
 # we start here
-print("GW Ranking Scraper 1.11")
+print("GW Ranking Scraper 1.12")
 # gw num
 while True:
     try:
