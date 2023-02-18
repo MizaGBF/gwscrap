@@ -1,7 +1,5 @@
-﻿from datetime import datetime, timedelta, timezone
+﻿from datetime import datetime, timezone
 import httpx
-from urllib import parse
-from socket import timeout
 import json
 import time
 import re
@@ -89,20 +87,18 @@ class Scraper():
         for c in B:
             tA = c.split('=')
             if tA[0][0] == " ": tA[0] = tA[0][1:]
-            f = False
             for i in range(0, len(A)):
                 tB = A[i].split('=')
                 if tB[0][0] == " ": tB[0] = tB[0][1:]
                 if tA[0] == tB[0]:
                     A[i] = c
-                    f = True
                     break
         with self.lock:
             self.data['cookie'] = ";".join(A)
 
     def requestRanking(self, page, crew = True): # request a ranking page and return the data
         try:
-            ts = int(datetime.utcnow().timestamp() * 1000)
+            ts = int(datetime.now(timezone.utc).replace(tzinfo=None).timestamp() * 1000)
             if crew: url = self.crew_url.format(page, ts, ts+300, self.data['id'])
             else: url = self.player_url.format(page, ts, ts+300, self.data['id'])
             response = self.client.get(url, headers={'Cookie': self.data['cookie'], 'Referer': 'https://game.granbluefantasy.jp/', 'Origin': 'https://game.granbluefantasy.jp', 'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'X-Requested-With': 'XMLHttpRequest', 'X-VERSION': self.version, 'Accept': 'application/json, text/javascript, */*; q=0.01', 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive', 'Content-Type': 'application/json'})
@@ -290,7 +286,7 @@ class Scraper():
             except Exception as ex:
                 print("Error:", ex)
                 return
-            conn = sqlite3.connect('GW.sql'.format(self.gw))
+            conn = sqlite3.connect('GW.sql')
             c = conn.cursor()
             c.execute('CREATE TABLE info (id int, ver int)')
             c.execute("INSERT INTO info VALUES ({}, 2)".format(self.gw))
@@ -589,7 +585,7 @@ class Scraper():
 
     def requestCrew(self, id, page): # request a crew info, page 0 = main page, page 1-3 = member pages
         try:
-            ts = int(datetime.utcnow().timestamp() * 1000)
+            ts = int(datetime.now(timezone.utc).replace(tzinfo=None).timestamp() * 1000)
             if page == 0:
                 req = self.buildRequest("https://game.granbluefantasy.jp/guild_other/guild_info/{}?_={}&t={}&uid={}".format(id, ts, ts+300, self.data['id']))
             else:
@@ -597,7 +593,7 @@ class Scraper():
             try: self.updateCookie(req.headers['set-cookie'])
             except: pass
             return req.json()
-        except Exception as e:
+        except:
             return None
 
     def downloadGbfg_sub(self, id: int): # subroutine
@@ -655,12 +651,12 @@ class Scraper():
                 with open('gbfg/{}.json'.format(c), 'w') as f:
                     json.dump(data, f)
                     print("'gbfg/{}.json' created".format(c))
-            except Exception as e:
+            except:
                 print("Couldn't create 'gbfg/{}.json'".format(c))
                 return
 
 # we start here
-print("GW Ranking Scraper 1.12")
+print("GW Ranking Scraper 1.13")
 # gw num
 while True:
     try:
