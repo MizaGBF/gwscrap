@@ -17,6 +17,14 @@ class Scraper():
     def __init__(self, gw_num : int): # constructor requires the gw number
         if gw_num < 1 or gw_num > 999: raise Exception("Invalid GW ID")
         self.gbfg_ids = ["1744673", "645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1807204", "472465", "1161924", "432330", "1629318", "1837508", "1880420", "678459", "632242", "1141898", "1380234", "1601132", "1580990", "844716", "581111", "1010961"]
+        self.gbfg_nicknames = {
+            "1837508" : "Nier!",
+            "432330" : "Little Girls",
+            "472465" : "Haruna",
+            "1141898" : "Quatrebois",
+            "1036007" : "Cumshot Happiness",
+            "599992" : "Fleet"
+        }
         
         limits = httpx.Limits(max_keepalive_connections=100, max_connections=100, keepalive_expiry=10)
         self.client = httpx.Client(http2=True, limits=limits)
@@ -326,7 +334,8 @@ class Scraper():
         # one crew by one
         for c in gbfg:
             if 'private' in gbfg[c]: continue # ignore private crews
-            with open("GW{}_{}.csv".format(self.gw, gbfg[c]['name'].translate(remove_punctuation_map)), 'w', newline='', encoding="utf-8") as csvfile:
+            name = self.gbfg_nicknames.get(c, gbfg[c]['name']).translate(remove_punctuation_map)
+            with open("GW{}_{}.csv".format(self.gw, name), 'w', newline='', encoding="utf-8") as csvfile:
                 llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
                 llwriter.writerow(["", "#", "id", "name", "rank", "battle", "preliminaries", "interlude & day 1", "total 1", "day 2", "total 2", "day 3", "total 3", "day 4", "total 4"])
                 l = []
@@ -381,7 +390,7 @@ class Scraper():
                 llwriter.writerow(['', '', '', '', '', '', '', '', '', '', '', '', '', '', ''])
                 gname = gbfg[c]['name'].replace('"', '\\"')
                 llwriter.writerow(['', 'guild', str(c), gname, '', '', '', '', '', '', '', '', '', '', ''])
-                print("GW{}_{}.csv: Done".format(self.gw, gbfg[c]['name'].translate(remove_punctuation_map)))
+                print("GW{}_{}.csv: Done".format(self.gw, name))
 
     def build_temp_crew_ranking_list(self): # same thing but while gw is on going (work a bit differently, useful for scouting enemies)
         try:
@@ -656,7 +665,7 @@ class Scraper():
                 return
 
 # we start here
-print("GW Ranking Scraper 1.13")
+print("GW Ranking Scraper 1.14")
 # gw num
 while True:
     try:
