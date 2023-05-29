@@ -27,6 +27,8 @@ for filename in csv_files:
     if filename.endswith('_Players.csv'):
         df = df.head(100)
 
+    
+
     # Replace NaN values with an empty string
     df.replace(np.nan, '', inplace=True)
 
@@ -66,7 +68,7 @@ for filename in csv_files:
         elif cell_text == "id":
             cell.get_text().set_text("ID")
         else:
-            if (key[1] == 3 and key[0] > 0 and key[0] <= element_count) or (key[1] == 3 and key[0] == element_count + 4): # don't touch names
+            if (key[1] == 3 and key[0] > 0 and key[0] <= element_count) or (key[1] == 3 and key[0] == element_count + 4) or (filename.endswith('_Players.csv') and key[1] == 4 and key[0] > 0 and key[0] <= element_count): # don't touch names
                 pass
             else:
                 cell.get_text().set_text(cell_text.capitalize().replace('& d', '& D'))
