@@ -12,7 +12,11 @@ if len(csv_files) == 0: exit(0)
 
 # make output folder
 gw_name = csv_files[0].split('_')[0]
-os.mkdir(gw_name)
+try: os.mkdir(gw_name)
+except: pass
+
+# Load the font using FontManager
+prop = fm.FontProperties(fname='C:\\Windows\\Fonts\\INSTALL_THIS_UNICODE_FONT.ttf')
 
 for filename in csv_files:
     print("Opening", filename)
@@ -25,9 +29,6 @@ for filename in csv_files:
 
     # Replace NaN values with an empty string
     df.replace(np.nan, '', inplace=True)
-
-    # Load the font using FontManager
-    prop = fm.FontProperties(fname='C:\\Windows\\Fonts\\INSTALL_THIS_UNICODE_FONT.ttf')
 
     # Create a figure and axis for plotting
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -87,4 +88,5 @@ for filename in csv_files:
 
     # Save the image
     plt.savefig(gw_name + '/' + filename.replace('.csv', '.png'), bbox_inches='tight')
+    plt.close()
     print(filename.replace('.csv', '.png'), "done")
