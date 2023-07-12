@@ -102,7 +102,7 @@ for filename in csv_files:
         if row_index == 0: # header
             table[key].set_facecolor("#006600")
             table[key].get_text().set_color('#FFFFFF')
-        if row_index <= element_count:
+        elif row_index <= element_count:
             if (index + 1) % 2 == 1: # odd
                 cell_text = cell.get_text().get_text()
                 if col_index == 0 or (isplayerfile and (col_index % 16) == 0): # first column
