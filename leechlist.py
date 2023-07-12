@@ -70,22 +70,21 @@ for filename in csv_files:
         if isplayerfile and (key[1] % 16) == 0 and key[1] >= 16 and cell_text == "":
             empty_lines.add("{}-{}".format(key[0], key[1] // 16))
 
-    # Format other strings
+    ldf = len(df) # data length
     for key, cell in table.get_celld().items():
+        # Format other strings
         row_index, col_index = key
-        if (row_index == 0 and col_index == 0):
-            continue
         if isplayerfile:
             col_part = col_index // 16
             col_index = col_index % 16
         cell_text = cell.get_text().get_text()
-        if cell_text == "":
+        if row_index == 0 and (col_index == 0 or (isplayerfile and col_index == 0)): # Hide the content of the first cell
+            cell.get_text().set_text("")
+        elif cell_text == "":
             if isplayerfile and "{}-{}".format(row_index, col_part) in empty_lines:
-                pass
+                pass # do nothing
             elif row_index <= element_count:
                 cell.get_text().set_text("n/a")
-        elif isplayerfile and cell_text == "Unnamed: 0":
-            cell.get_text().set_text("")
         elif cell_text == "id":
             cell.get_text().set_text("ID")
         else:
@@ -94,28 +93,31 @@ for filename in csv_files:
             else:
                 cell.get_text().set_text(cell_text.capitalize().replace('& d', '& D'))
 
-    # Hide the content of the first cell
-    table[0, 0].get_text().set_text("")
-
-    # Alternating row colors
-    ldf = len(df)
-    for i, key in enumerate(table.get_celld().keys()):
-        row_index, col_index = key
-        if isplayerfile: index = (row_index - 1) + (col_index // 16) * (ldf + 1)
-        else: index = row_index
+        # Alternating row colors
+        if isplayerfile:
+            row_index, col_index = key
+            index = (row_index - 1) + (col_index // 16) * (ldf + 1)
+        else:
+            index = row_index
         if row_index == 0: # header
             table[key].set_facecolor("#006600")
             table[key].get_text().set_color('#FFFFFF')
-        elif (index + 1) % 2 == 1 and row_index <= element_count: # odd
-            if col_index == 0 or (isplayerfile and (col_index % 16) == 0):
-                table[key].set_facecolor("#ffdeb3")
-            else:
-                table[key].set_facecolor("#ccffb3")
-        elif (index + 1) % 2 == 0 and row_index <= element_count: # even
-            if col_index == 0 or (isplayerfile and (col_index % 16) == 0):
-                table[key].set_facecolor("#f7eee1")
-            else:
-                table[key].set_facecolor("#f6fff2")
+        if row_index <= element_count:
+            if (index + 1) % 2 == 1: # odd
+                cell_text = cell.get_text().get_text()
+                if col_index == 0 or (isplayerfile and (col_index % 16) == 0): # first column
+                    table[key].set_facecolor("#ffdeb3")
+                elif cell.get_text().get_text() == "n/a":
+                    table[key].set_facecolor("#ffb3b3")
+                else:
+                    table[key].set_facecolor("#ccffb3")
+            else: # even
+                if col_index == 0 or (isplayerfile and (col_index % 16) == 0): # first column
+                    table[key].set_facecolor("#f7eee1")
+                elif cell.get_text().get_text() == "n/a":
+                    table[key].set_facecolor("#f5d0d0")
+                else:
+                    table[key].set_facecolor("#f6fff2")
 
     # Automatically adjust the cell size to fit the text
     table.auto_set_column_width(col=list(range(len(df.columns))))
