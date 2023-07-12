@@ -2,6 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import numpy as np
+import math
 import glob
 import os
 
@@ -23,11 +24,19 @@ for filename in csv_files:
     # Load csv
     df = pd.read_csv(filename)
 
-    # Limit to 100 players (for Players.csv)
-    if filename.endswith('_Players.csv'):
-        df = df.head(100)
-
-    
+    # (for Players.csv)
+    isplayerfile = (filename.endswith('_Players.csv') and len(df) > 50)
+    if isplayerfile:
+        if len(df) > 300:
+            df = df.head(300) # limit to 300 players
+        part_count = int(math.ceil(len(df) / 50.0))
+        
+        index = 0
+        parts = [df.iloc[:50]]
+        for i in range(1, part_count):
+            parts.append(df.iloc[50*i:min(len(df), 50*(i+1))])
+            parts[-1].reset_index(drop=True, inplace=True) # reset index of subsequent parts
+        df = pd.concat(parts, axis=1) # concatenate parts
 
     # Replace NaN values with an empty string
     df.replace(np.nan, '', inplace=True)
@@ -42,6 +51,8 @@ for filename in csv_files:
     table.set_fontsize(12)
     table.scale(1, 1.5)
 
+    empty_lines = set() # for player files
+
     # Set the font properties for each text object within the cells
     element_count = 0
     for key, cell in table.get_celld().items():
@@ -50,25 +61,35 @@ for filename in csv_files:
         # Format float numbers as integers, with thousand separators
         cell_text = cell.get_text().get_text()
         if cell_text.replace(".", "").isnumeric():
-            if key[1] == 2:
+            if key[1] == 2 or (isplayerfile and (key[1] % 16) == 2): # ID formatting
                 cell.get_text().set_text(str(int(float(cell_text))))
             else:
                 cell.get_text().set_text('{:,}'.format(int(float(cell_text))))
             if key[1] == 0: # counting number of elements (first column)
                 element_count = max(element_count, int(cell.get_text().get_text()))
+        if isplayerfile and (key[1] % 16) == 0 and key[1] >= 16 and cell_text == "":
+            empty_lines.add("{}-{}".format(key[0], key[1] // 16))
 
     # Format other strings
     for key, cell in table.get_celld().items():
-        if (key[0] == 0 and key[1] == 0):
+        row_index, col_index = key
+        if (row_index == 0 and col_index == 0):
             continue
+        if isplayerfile:
+            col_part = col_index // 16
+            col_index = col_index % 16
         cell_text = cell.get_text().get_text()
         if cell_text == "":
-            if key[0] <= element_count:
+            if isplayerfile and "{}-{}".format(row_index, col_part) in empty_lines:
+                pass
+            elif row_index <= element_count:
                 cell.get_text().set_text("n/a")
+        elif isplayerfile and cell_text == "Unnamed: 0":
+            cell.get_text().set_text("")
         elif cell_text == "id":
             cell.get_text().set_text("ID")
         else:
-            if (key[1] == 3 and key[0] > 0 and key[0] <= element_count) or (key[1] == 3 and key[0] == element_count + 4) or (filename.endswith('_Players.csv') and key[1] == 4 and key[0] > 0 and key[0] <= element_count): # don't touch names
+            if (col_index == 3 and row_index > 0 and row_index <= element_count) or (col_index == 3 and row_index == element_count + 4) or (filename.endswith('_Players.csv') and col_index == 4 and row_index > 0 and row_index <= element_count): # don't touch names
                 pass
             else:
                 cell.get_text().set_text(cell_text.capitalize().replace('& d', '& D'))
@@ -77,13 +98,24 @@ for filename in csv_files:
     table[0, 0].get_text().set_text("")
 
     # Alternating row colors
+    ldf = len(df)
     for i, key in enumerate(table.get_celld().keys()):
         row_index, col_index = key
-        if row_index == 0:
+        if isplayerfile: index = (row_index - 1) + (col_index // 16) * (ldf + 1)
+        else: index = row_index
+        if row_index == 0: # header
             table[key].set_facecolor("#006600")
             table[key].get_text().set_color('#FFFFFF')
-        elif (row_index + 1) % 2 == 1 and row_index <= element_count:
-            table[key].set_facecolor("#ccffb3")
+        elif (index + 1) % 2 == 1 and row_index <= element_count: # odd
+            if col_index == 0 or (isplayerfile and (col_index % 16) == 0):
+                table[key].set_facecolor("#ffdeb3")
+            else:
+                table[key].set_facecolor("#ccffb3")
+        elif (index + 1) % 2 == 0 and row_index <= element_count: # even
+            if col_index == 0 or (isplayerfile and (col_index % 16) == 0):
+                table[key].set_facecolor("#f7eee1")
+            else:
+                table[key].set_facecolor("#f6fff2")
 
     # Automatically adjust the cell size to fit the text
     table.auto_set_column_width(col=list(range(len(df.columns))))
