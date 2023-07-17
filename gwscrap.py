@@ -12,6 +12,7 @@ import csv
 import os
 from os import listdir
 from os.path import isfile, join
+from bs4 import BeautifulSoup
 
 class Scraper():
     def __init__(self, gw_num : int): # constructor requires the gw number
@@ -433,7 +434,7 @@ class Scraper():
                 llwriter.writerow(row)
             print("GW{}_Crews.csv: Done".format(self.gw))
 
-    def build_crew_list_no_sorting(self): # build the (You) leechlist on a .csv format (without sorting)
+    def build_you_not_sorted(self): # build the (You) leechlist on a .csv format (without sorting)
         remove_punctuation_map = dict((ord(char), None) for char in '\/*?:"<>|')
         try:
             with open('gbfg.json') as f:
@@ -664,8 +665,110 @@ class Scraper():
                 print("Couldn't create 'gbfg/{}.json'".format(c))
                 return
 
+    def build_history(self):
+        try:
+            with open('gbfg.json') as f:
+                gbfg = json.load(f)
+        except Exception as e:
+            print("Error:", e)
+            return
+        l = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+            futures = []
+            for c in gbfg:
+                if 'private' in gbfg[c]: continue
+                for p in gbfg[c]['player']:
+                    futures.append(executor.submit(self.build_history_sub, p['id'], p['name'], p['level'], gbfg[c]['name']))
+            count = 0
+            countmax = len(futures)
+            print("Requesting", countmax, "players to http://gbf.kohi-nattou.com/ ...")
+            for future in concurrent.futures.as_completed(futures):
+                r = future.result()
+                if r is not None:
+                    l.append(r)
+                count += 1
+                if count >= countmax:
+                    print("Progress: 100%")
+                elif count % 30 == 0:
+                    print("Progress: {:.1f}%".format(100*count/countmax))
+        for i in range(len(l)-1):
+            for j in range(i+1, len(l)):
+                if l[i][1] > l[j][1]:
+                    l[i], l[j] = l[j], l[i]
+        for i in range(len(l)):
+            l[i][0] = i + 1
+        if len(l) > 0:
+            with open("GW{}_History.csv".format(self.gw), 'w', newline='', encoding="utf-8") as csvfile:
+                llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
+                llwriter.writerow(["", "#", "percentile", "id", "name", "guild", "rank", "gw range", "best ranked", "#", "contribution", "battles", "best contrib.", "#", "contribution", "battles", "total battles", "total honor"])
+                for i in range(0, len(l)):
+                    llwriter.writerow(l[i])
+            print("GW{}_History.csv: Done".format(self.gw))
+
+    def build_history_sub(self, pid, pname, plevel, cname):
+        try:
+            response = self.client.post("http://gbf.kohi-nattou.com/2023/07/15/test/", data={'id': str(pid), 'search': '検索'}, headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9", "Accept-Encoding": "gzip, deflate", "Connection": "keep-alive", "Host": "gbf.kohi-nattou.com", "Origin": "http://gbf.kohi-nattou.com", "Referer": "http://gbf.kohi-nattou.com/2023/07/15/test/", "User-Agent": "Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"}, timeout=30)
+            if response.status_code != 200: raise Exception(str(response.status_code))
+            soup = BeautifulSoup(response.text, 'html.parser')
+            d = [0, "", "", pid, pname, cname.replace('"', '\\"'), plevel, "", "", "", "", "", "", "", "", "", "", ""]
+            # part 1
+            div = soup.find_all("div", class_="highlight-section")
+            if len(div) == 0: return None
+            div = div[0]
+            for children in div.findChildren(recursive=False):
+                if "highlight-title" in children.attrs["class"]:
+                    d[7]= children.text.split("さんの第")[1].split("までの古戦場の振り返り")[0].replace("回～第", " - ").replace("回", "")
+                elif "highlight-info" in children.attrs["class"]:
+                    for cd in children.findChildren(recursive=False):
+                        if "highlight-info-item" in cd.attrs["class"]:
+                            cc = cd.findChildren()
+                            if cc[0].text == "合計貢献度:":
+                                d[17] = cc[1].text.replace(',', '')
+                            elif cc[0].text == "合計討伐数:":
+                                d[16] = cc[1].text.replace(',', '').replace(' 体', '')
+                            elif cc[0].text == "貢献度ランキング：":
+                                d[1] = int(cc[1].text.replace(',', '').replace(' 位', ''))
+                elif "highlight-label2" in children.attrs["class"]:
+                    d[2] = children.text.split("あなたは上位")[1].replace("の騎空士です", "")
+            # part 2
+            div = soup.find_all("div", class_="highlight-section2")[0]
+            for children in div.findChildren(recursive=False):
+                if "highlight-title" in children.attrs["class"]:
+                    d[8] = "GW " + children.text.split("最も順位が高かったのは第")[1].split("回古戦場")[0]
+                elif "highlight-info" in children.attrs["class"]:
+                    for cd in children.findChildren(recursive=False):
+                        if "highlight-info-item" in cd.attrs["class"]:
+                            cc = cd.findChildren()
+                            if cc[0].text == "貢献度:":
+                                d[10] = cc[1].text.replace(',', '')
+                            elif cc[0].text == "討伐数:":
+                                d[11] = cc[1].text.replace(',', '').replace(' 体', '')
+                            elif cc[0].text == "順位:":
+                                d[9] = cc[1].text.replace(',', '').replace(' 位', '')
+            # part 3
+            div = soup.find_all("div", class_="highlight-section3")[0]
+            for children in div.findChildren(recursive=False):
+                if "highlight-title" in children.attrs["class"]:
+                    d[12] = "GW " + children.text.split("最も貢献度を稼いだのは第")[1].split("回古戦場")[0]
+                elif "highlight-info" in children.attrs["class"]:
+                    for cd in children.findChildren(recursive=False):
+                        if "highlight-info-item" in cd.attrs["class"]:
+                            cc = cd.findChildren()
+                            if cc[0].text == "貢献度:":
+                                d[14] = cc[1].text.replace(',', '')
+                            elif cc[0].text == "討伐数:":
+                                d[15] = cc[1].text.replace(',', '').replace(' 体', '')
+                            elif cc[0].text == "順位:":
+                                d[13] = cc[1].text.replace(',', '').replace(' 位', '')
+            return d
+        except Exception as e:
+            if str(e) == "timed out":
+                return self.build_history_sub(pid, pname, plevel, cname)
+            print("Error", pid, e)
+            return None
+
 # we start here
-print("GW Ranking Scraper 1.14")
+print("GW Ranking Scraper 1.15")
 # gw num
 while True:
     try:
@@ -711,7 +814,7 @@ while True:
             print("[6/6] Complete")
         elif i == "10":
             while True:
-                print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary Crew Lists\n[2] Build Temporary /gbfg/ Ranking\n[3] Download /gbfg/ member list\n[4] Download a crew member list\n[5] Make Temporary MizaBOT database\n[6] Make Final MizaBOT database\n[Any] Quit")
+                print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary Crew Lists\n[2] Build Temporary /gbfg/ Ranking\n[3] Download /gbfg/ member list\n[4] Download a crew member list\n[5] Make Temporary MizaBOT database\n[6] Make Final MizaBOT database\n[7] Build (You) Leechlist (non-sorted)\n[8] Build /gbfg/ History\n[Any] Quit")
                 i = input("Input: ")
                 print('')
                 if i == "0": scraper.buildGbfgFile()
@@ -745,7 +848,8 @@ while True:
                     elif i not in days: print("Invalid day")
                     else: scraper.makebotdb(days.index(i) + 1)
                 elif i == "6": scraper.makebotdb(0)
-                elif i == "7": scraper.build_crew_list_no_sorting()
+                elif i == "7": scraper.build_you_not_sorted()
+                elif i == "8": scraper.build_history()
                 else: break
                 scraper.save()
         else: exit(0)

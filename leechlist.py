@@ -24,9 +24,13 @@ for filename in csv_files:
     # Load csv
     df = pd.read_csv(filename)
 
-    # (for Players.csv)
-    isplayerfile = (filename.endswith('_Players.csv') and len(df) > 50)
-    if isplayerfile:
+    if len(df) > 50: # for Players.csv or History.csv
+        if filename.endswith('_Players.csv'):
+            isplayerfile = True
+            player_index = 16
+        elif filename.endswith('_History.csv'):
+            isplayerfile = True
+            player_index = 18
         if len(df) > 300:
             df = df.head(300) # limit to 300 players
         part_count = int(math.ceil(len(df) / 50.0))
@@ -37,6 +41,9 @@ for filename in csv_files:
             parts.append(df.iloc[50*i:min(len(df), 50*(i+1))])
             parts[-1].reset_index(drop=True, inplace=True) # reset index of subsequent parts
         df = pd.concat(parts, axis=1) # concatenate parts
+    else:
+        isplayerfile = False
+        player_index = 16
 
     # Replace NaN values with an empty string
     df.replace(np.nan, '', inplace=True)
@@ -53,30 +60,45 @@ for filename in csv_files:
 
     empty_lines = set() # for player files
 
-    # Set the font properties for each text object within the cells
     element_count = 0
+    id_col = set()
+    guild_col = set()
+    name_col = set()
+    best_col = set()
+    # read first row
+    for key, cell in table.get_celld().items():
+        if key[0] != 0: continue
+        cell_text = cell.get_text().get_text()
+        if cell_text.endswith('.1') or cell_text.endswith('.2'):
+            cell.get_text().set_text(cell_text[:-2])
+        if cell_text == "id": id_col.add(key[1])
+        elif cell_text == "guild": guild_col.add(key[1])
+        elif cell_text == "name": name_col.add(key[1])
+        elif cell_text == "best ranked" or cell_text == "best contrib.": best_col.add(key[1])
+
+    # Set the font properties for each text object within the cells
     for key, cell in table.get_celld().items():
         cell.set_text_props(fontproperties=prop)
         cell.set_edgecolor('none')
         # Format float numbers as integers, with thousand separators
         cell_text = cell.get_text().get_text()
         if cell_text.replace(".", "").isnumeric():
-            if key[1] == 2 or (isplayerfile and (key[1] % 16) == 2): # ID formatting
+            if key[1] in id_col: # ID formatting
                 cell.get_text().set_text(str(int(float(cell_text))))
             else:
                 cell.get_text().set_text('{:,}'.format(int(float(cell_text))))
             if key[1] == 0: # counting number of elements (first column)
                 element_count = max(element_count, int(cell.get_text().get_text()))
-        if isplayerfile and (key[1] % 16) == 0 and key[1] >= 16 and cell_text == "":
-            empty_lines.add("{}-{}".format(key[0], key[1] // 16))
+        if isplayerfile and (key[1] % player_index) == 0 and key[1] >= player_index and cell_text == "":
+            empty_lines.add("{}-{}".format(key[0], key[1] // player_index))
 
     ldf = len(df) # data length
     for key, cell in table.get_celld().items():
         # Format other strings
         row_index, col_index = key
         if isplayerfile:
-            col_part = col_index // 16
-            col_index = col_index % 16
+            col_part = col_index // player_index
+            col_index = col_index % player_index
         cell_text = cell.get_text().get_text()
         if row_index == 0 and (col_index == 0 or (isplayerfile and col_index == 0)): # Hide the content of the first cell
             cell.get_text().set_text("")
@@ -88,15 +110,19 @@ for filename in csv_files:
         elif cell_text == "id":
             cell.get_text().set_text("ID")
         else:
-            if (col_index == 3 and row_index > 0 and row_index <= element_count) or (col_index == 3 and row_index == element_count + 4) or (filename.endswith('_Players.csv') and col_index == 4 and row_index > 0 and row_index <= element_count): # don't touch names
-                pass
+            if col_index in guild_col and row_index > 0: # guild column
+                pass # no formatting
+            elif col_index in best_col and row_index > 0: # best column (History.csv)
+                pass # no formatting
+            elif col_index in name_col and row_index > 0: # name
+                pass # no formatting
             else:
                 cell.get_text().set_text(cell_text.capitalize().replace('& d', '& D'))
 
         # Alternating row colors
         if isplayerfile:
             row_index, col_index = key
-            index = (row_index - 1) + (col_index // 16) * (ldf + 1)
+            index = (row_index - 1) + (col_index // player_index) * (ldf + 1)
         else:
             index = row_index
         if row_index == 0: # header
@@ -105,14 +131,14 @@ for filename in csv_files:
         elif row_index <= element_count:
             if (index + 1) % 2 == 1: # odd
                 cell_text = cell.get_text().get_text()
-                if col_index == 0 or (isplayerfile and (col_index % 16) == 0): # first column
+                if col_index == 0 or (isplayerfile and (col_index % player_index) == 0): # first column
                     table[key].set_facecolor("#ffdeb3")
                 elif cell.get_text().get_text() == "n/a":
                     table[key].set_facecolor("#ffb3b3")
                 else:
                     table[key].set_facecolor("#ccffb3")
             else: # even
-                if col_index == 0 or (isplayerfile and (col_index % 16) == 0): # first column
+                if col_index == 0 or (isplayerfile and (col_index % player_index) == 0): # first column
                     table[key].set_facecolor("#f7eee1")
                 elif cell.get_text().get_text() == "n/a":
                     table[key].set_facecolor("#f5d0d0")
