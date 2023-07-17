@@ -7,6 +7,27 @@ import glob
 import os
 
 if __name__ == "__main__":
+    # colors
+    tiers = [
+        { # players
+            2000 : ["#ffebb3", "#f7f1e1"],
+            90000 : ["#ccf0e6", "#edfffa"],
+            140000 : ["#ccffb3", "#f6fff2"],
+            270000 : ["#e6d5bc", "#f5eee4"],
+            9999999999 : ["#d4c7c7", "#d4d4d4"]
+        },
+        { # crews
+            2500 : ["#ffebb3", "#f7f1e1"],
+            5500 : ["#ccf0e6", "#edfffa"],
+            9000 : ["#ccffb3", "#f6fff2"],
+            14000 : ["#e6d5bc", "#f5eee4"],
+            9999999999 : ["#d4c7c7", "#d4d4d4"]
+        }
+    ]
+    header_color = "#006600"
+    first_col_color = ["#f7eee1", "#ffdeb3"]
+    na_color = ["#f5d0d0", "#ffb3b3"]
+
     # Get csv list
     csv_files = glob.glob("*.csv")
 
@@ -45,6 +66,7 @@ if __name__ == "__main__":
         else:
             isplayerfile = False
             player_index = 16
+        iscrewfile = (filename.endswith('_Crews.csv'))
 
         # Replace NaN values with an empty string
         df.replace(np.nan, '', inplace=True)
@@ -127,24 +149,22 @@ if __name__ == "__main__":
             else:
                 index = row_index
             if row_index == 0: # header
-                table[key].set_facecolor("#006600")
-                table[key].get_text().set_color('#FFFFFF')
+                table[key].set_facecolor(header_color)
+                table[key].get_text().set_color('#ffffff')
             elif row_index <= element_count:
-                if (index + 1) % 2 == 1: # odd
-                    cell_text = cell.get_text().get_text()
-                    if col_index == 0 or (isplayerfile and (col_index % player_index) == 0): # first column
-                        table[key].set_facecolor("#ffdeb3")
-                    elif cell.get_text().get_text() == "n/a":
-                        table[key].set_facecolor("#ffb3b3")
-                    else:
-                        table[key].set_facecolor("#ccffb3")
-                else: # even
-                    if col_index == 0 or (isplayerfile and (col_index % player_index) == 0): # first column
-                        table[key].set_facecolor("#f7eee1")
-                    elif cell.get_text().get_text() == "n/a":
-                        table[key].set_facecolor("#f5d0d0")
-                    else:
-                        table[key].set_facecolor("#f6fff2")
+                color_index = (index + 1) % 2
+                cell_text = cell.get_text().get_text()
+                if col_index == 0 or (isplayerfile and (col_index % player_index) == 0): # first column
+                    table[key].set_facecolor(first_col_color[color_index])
+                elif cell.get_text().get_text() == "n/a":
+                    table[key].set_facecolor(na_color[color_index])
+                else:
+                    try: ranking = int(table._cells[(row_index, col_index + 1 - col_index % player_index)]._text.get_text().replace(',', ''))
+                    except: ranking = 9999999998
+                    for k, v in tiers[iscrewfile].items():
+                        if ranking < k:
+                            table[key].set_facecolor(v[color_index])
+                            break
 
         # Automatically adjust the cell size to fit the text
         table.auto_set_column_width(col=list(range(len(df.columns))))
