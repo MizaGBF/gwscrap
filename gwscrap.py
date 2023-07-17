@@ -767,7 +767,7 @@ class Scraper():
             print("Error", pid, e)
             return None
 
-if __name__() == "__main__":
+if __name__ == "__main__":
     # we start here
     print("GW Ranking Scraper 1.15")
     # gw num
