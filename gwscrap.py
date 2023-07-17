@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timezone
+﻿from datetime import datetime, timedelta, timezone
 import httpx
 import json
 import time
@@ -13,10 +13,18 @@ import os
 from os import listdir
 from os.path import isfile, join
 from bs4 import BeautifulSoup
+import statistics
+import traceback
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import numpy as np
+import math
+import glob
 
 class Scraper():
-    def __init__(self, gw_num : int): # constructor requires the gw number
-        if gw_num < 1 or gw_num > 999: raise Exception("Invalid GW ID")
+    def __init__(self):
+        print("GW Ranking Scraper 2.0")
         self.gbfg_ids = ["1744673", "645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1807204", "472465", "1161924", "432330", "1629318", "1837508", "1880420", "678459", "632242", "1141898", "1380234", "1601132", "1580990", "844716", "581111", "1010961"]
         self.gbfg_nicknames = {
             "1837508" : "Nier!",
@@ -29,15 +37,18 @@ class Scraper():
         
         limits = httpx.Limits(max_keepalive_connections=100, max_connections=100, keepalive_expiry=10)
         self.client = httpx.Client(http2=True, limits=limits)
-        self.gw = gw_num
+        self.gw = None
+        self.gw_dates = None
+        self.temp_gw_mode = False
+        self.temp_dat = None
         self.max_threads = 100 # change this if needed
         self.lock = Lock()
         # preparing urls
-        base_url = "https://game.granbluefantasy.jp/teamraid" + str(gw_num).zfill(3)
-        self.crew_url = base_url + "/rest/ranking/totalguild/detail/{}/0?_={}&t={}&uid={}"
-        self.player_url = base_url + "/rest_ranking_user/detail/{}/0?_={}&t={}&uid={}"
+        self.crew_url = ""
+        self.player_url = ""
         # empty save data
         self.data = {'id':0, 'cookie':'', 'user_agent':''}
+        self.modified = False
         self.version = None
         self.vregex = re.compile("Game\.version = \"(\d+)\";")
         # load our data
@@ -48,6 +59,12 @@ class Scraper():
         # for Ctrl+C
         signal.signal(signal.SIGINT, self.exit)
 
+    def pexc(self, exception):
+        try:
+            return "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+        except:
+            return e
+
     def exit(self): # called by ctrl+C
         print("Saving...")
         self.save()
@@ -56,21 +73,23 @@ class Scraper():
         try:
             with open('config.json') as f:
                 data = json.load(f)
-                if 'id' not in self.data or 'cookie' not in self.data or 'user_agent' not in self.data: raise Exception("Missing settings in config.json")
                 self.data = data
                 return True
         except Exception as e:
-            print('load(): ' + str(e))
+            print('load(): ' + self.pexc(e))
             return False
 
     def save(self): # save
-        try:
-            with open('config.json', 'w') as outfile:
-                json.dump(self.data, outfile)
-            return True
-        except Exception as e:
-            print('save(): ' + str(e))
-            return False
+        if self.modified:
+            try:
+                with open('config.json', 'w') as outfile:
+                    json.dump(self.data, outfile)
+                self.modified = False
+                print("'config.json' updated")
+                return True
+            except Exception as e:
+                print('save(): ' + self.pexc(e))
+                return False
 
     def writeFile(self, data, name): # write our scraped ranking
         try:
@@ -78,8 +97,203 @@ class Scraper():
                 json.dump(data, outfile)
             return True
         except Exception as e:
-            print('writeFile(): ' + str(e))
+            print('writeFile(): ' + self.pexc(e))
             return False
+
+    def toggle_temp_data(self):
+        if self.temp_gw_mode:
+            self.gw = None
+            self.temp_gw_mode = False
+            print("Temporary GW mode disabled")
+        else:
+            while True:
+                try:
+                    s = input("Input the GW ID (Leave blank to quit):")
+                    if s == "": return
+                    self.gw = int(s)
+                    if self.gw < 1: raise Exception()
+                    break
+                except:
+                    print("Invalid number")
+            while True:
+                try:
+                    s = input("Input the day (prelim, d1, d2, d3, d4):")
+                    if s not in ['prelim', 'd1', 'd2', 'd3', 'd4']: raise Exception()
+                    self.temp_dat = s
+                    break
+                except:
+                    print("Invalid day")
+            self.temp_gw_mode = True
+            print("Internal variables set to GW", self.gw, "for day", self.temp_dat)
+
+    # gw stuff
+    def gw_url(self):
+        base_url = "https://game.granbluefantasy.jp/teamraid{}".format((str(self.gw)).zfill(3))
+        self.crew_url = base_url + "/rest/ranking/totalguild/detail/{}/0?_={}&t={}&uid={}"
+        self.player_url = base_url + "/rest_ranking_user/detail/{}/0?_={}&t={}&uid={}"
+    
+    def check_gw(self):
+        if self.temp_gw_mode: return 0
+        while True:
+            try:
+                print("Checking GW state...")
+                if self.gw_dates is None or self.gw is None: # load from file
+                    self.gw_dates = self.gw_set(self.data.get('dates', None))
+                    self.gw = self.data.get('gw', None)
+                    if self.gw_dates is None or self.gw is None: # try again
+                        raise Exception()
+                self.gw_url()
+                self.save()
+                match self.gw_day(): # -2 = undefined, -1 = hasn't started, 0 = prelim, 1 = interlude, 2-5 = day, 10+ break period of day, 20 = FR day, 30 = ended
+                    case -1:
+                        print("State: GW hasn't started yet")
+                        return None
+                    case (0|10) as d:
+                        print("State: Preliminaries" + ("(On going)" if d >= 10 else ""))
+                        if d == 0:
+                            if input("Currently on going, are you sure you wanna continue ('y' to continue):").lower() != 's':
+                                return None
+                        return 0
+                    case 1|11:
+                        print("State: Interlude")
+                        return 0
+                    case (2|3|4|5|12|13|14|15) as d:
+                        if d > 10:
+                            print("State: Day ", d-11, "(On going)")
+                            return d-11
+                        else:
+                            print("State: Day ", d-1)
+                            if input("Currently on going, are you sure you wanna continue ('y' to continue):").lower() != 's':
+                                return None
+                            return d-1
+                    case 20:
+                        print("State: Final rally")
+                        return 4
+                    case 30:
+                        print("State: GW has ended, deleting from memory...")
+                        self.gw = None
+                        self.gw_dates = None
+                        self.data.pop('gw')
+                        self.data.pop('dates')
+                        self.modified = True
+                        self.save()
+                        return None
+                    case _:
+                        print("Unsupported state, debugging is needed")
+                        print("Exiting...")
+                        exit(0)
+            except Exception as e:
+                print(self.pexc(e))
+                print("No GW set in memory")
+                while True:
+                    try:
+                        s = input("Input the GW ID (Leave blank to quit):")
+                        if s == "": return None
+                        self.gw = int(s)
+                        if self.gw < 68: raise Exception()
+                        self.data['gw'] = self.gw
+                        break
+                    except:
+                        print("Invalid number")
+                d = [0, 0, 0]
+                while True:
+                    try:
+                        d[0] = int(input("Input the day:"))
+                        if d[0] < 1 or d[0] > 31: raise Exception()
+                        break
+                    except:
+                        print("Invalid number")
+                while True:
+                    try:
+                        d[1] = int(input("Input the month:"))
+                        if d[1] < 1 or d[1] > 12: raise Exception()
+                        break
+                    except:
+                        print("Invalid number")
+                while True:
+                    try:
+                        d[2] = int(input("Input the year:"))
+                        if d[2] < 2023: raise Exception()
+                        break
+                    except:
+                        print("Invalid number")
+                self.gw_dates = self.gw_set(d)
+                self.data['dates'] = d
+                print("GW{} set to {}/{}/{}".format(self.data['gw'], self.data['dates'][0], self.data['dates'][1], self.data['dates'][2]))
+                if input("Confirm ('y' to confirm)?").lower() == 'y':
+                    self.modified = True
+                else:
+                    self.gw = None
+                    self.gw_dates = None
+                    self.data.pop('gw')
+                    self.data.pop('dates')
+                    print("Settings not saved")
+
+    def gw_to_file(self, d):
+        try:
+            if self.temp_gw_mode: return self.temp_dat
+            return ['prelim', 'd1', 'd2', 'd3', 'd4'][d]
+        except:
+            return None
+
+    def gw_set(self, DDMMYY):
+        if DDMMYY is None: return None
+        dates = {}
+        dates["Preliminaries"] = datetime.now(timezone.utc).replace(tzinfo=None).replace(year=DDMMYY[2], month=DDMMYY[1], day=DDMMYY[0], hour=19, minute=0, second=0, microsecond=0)
+        dates["Interlude"] = dates["Preliminaries"] + timedelta(days=1, seconds=43200) # +36h
+        dates["Day 1"] = dates["Interlude"] + timedelta(days=1) # +24h
+        dates["Day 2"] = dates["Day 1"] + timedelta(days=1) # +24h
+        dates["Day 3"] = dates["Day 2"] + timedelta(days=1) # +24h
+        dates["Day 4"] = dates["Day 3"] + timedelta(days=1) # +24h
+        dates["Day 5"] = dates["Day 4"] + timedelta(days=1) # +24h
+        dates["End"] = dates["Day 5"] + timedelta(seconds=61200) # +17h
+        return dates
+
+    def gw_day(self): # -2 = undefined, -1 = hasn't started, 0 = prelim, 1 = interlude, 2-5 = day, 10+ break period of day, 20 = FR day, 30 = ended
+        current_time = self.JST()
+        if current_time < self.gw_dates["Preliminaries"]:
+            return -1
+        elif current_time >= self.gw_dates["End"]:
+            return 30
+        elif current_time >= self.gw_dates["Day 5"]:
+            return 20
+        elif current_time >= self.gw_dates["Day 1"]:
+            it = ['Day 5', 'Day 4', 'Day 3', 'Day 2', 'Day 1']
+            for i in range(1, len(it)): # loop to not copy paste this 5 more times
+                if current_time >= self.gw_dates[it[i]]:
+                    d = self.gw_dates[it[i-1]] - current_time
+                    if d < timedelta(seconds=18000): return 16 - i
+                    else: return 6 - i
+        elif current_time > self.gw_dates["Interlude"]:
+            return 1
+        elif current_time > self.gw_dates["Preliminaries"]:
+            d = self.gw_dates['Interlude'] - current_time
+            if d < timedelta(seconds=18000): return 10
+            else: return 0
+        else:
+            return -2
+
+    def JST(self):
+        return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=32400) - timedelta(seconds=30)
+
+    # utility used by build_crew_list
+    def avg_of(self, l): 
+        if len(l) == 0:
+            return ''
+        else:
+            return str(sum(l)//len(l))
+
+    def med_of(self, l):
+        if len(l) == 0:
+            return ''
+        else:
+            return statistics.median(l)
+
+    def sum_of(self, l):
+        if len(l) == 0:
+            return 'n/a'
+        else:
+            return sum(l)
 
     def getGameversion(self): # get the game version
         try:
@@ -104,6 +318,7 @@ class Scraper():
                     break
         with self.lock:
             self.data['cookie'] = ";".join(A)
+            self.modified = True
 
     def requestRanking(self, page, crew = True): # request a ranking page and return the data
         try:
@@ -143,8 +358,12 @@ class Scraper():
         return True
 
     def run(self, mode = 0): # main loop. 0 = both crews and players, 1 = crews, 2 = players
+        day = self.gw_to_file(self.check_gw())
+        if day is None or self.temp_gw_mode:
+            print("Invalid GW state to continue")
+            return
         # user check
-        input("Make sure you won't overwrite a file (Press anything to continue): ")
+        input("Make sure you won't overwrite a file with the suffix '{}' (Press anything to continue): ".format(day))
         # check the game version
         self.version = str(self.getGameversion())
         if self.version is None:
@@ -176,8 +395,9 @@ class Scraper():
                 for future in concurrent.futures.as_completed(futures):
                     future.result()
 
-            self.writeFile(results, 'GW{}_crew.json'.format(self.gw)) # save the result
-            print("Done, saved to 'GW{}_crew.json'".format(self.gw))
+            self.writeFile(results, 'GW{}_crew_{}.json'.format(self.gw, day)) # save the result
+            print("Done, saved to 'GW{}_crew_{}.json'".format(self.gw, day))
+            self.save()
 
         if mode == 0 or mode == 2:
             # player ranking. exact same thing, I lazily copypasted.
@@ -204,11 +424,14 @@ class Scraper():
                     future.result()
             q.join()
 
-            self.writeFile(results, 'GW{}_player.json'.format(self.gw))
-            print("Done, saved to 'GW{}_player.json'".format(self.gw))
+            self.writeFile(results, 'GW{}_player_{}.json'.format(self.gw, day))
+            print("Done, saved to 'GW{}_player_{}.json'".format(self.gw, day))
             self.save()
 
     def buildGW(self, mode = 0): # build a .json compiling all the data withing json named with the 'days' suffix
+        if self.check_gw() is None:
+            print("Invalid GW state to continue")
+            return
         days = ['prelim', 'd1', 'd2', 'd3', 'd4']
         if mode == 0 or mode == 1:
             results = {}
@@ -229,7 +452,7 @@ class Scraper():
                         elif d == 'd4' and 'd3' in results[c['id']]: results[c['id']]['delta_d4'] = str(int(results[c['id']][d]) - int(results[c['id']]['d3']))
                         if d == days[-1]: results[c['id']]['ranking'] = c['ranking']
                 except Exception as e:
-                    print(e)
+                    print(self.pexc(e))
             self.writeFile(results, 'GW{}_crew_full.json'.format(self.gw))
             print("Done, saved to 'GW{}_crew_full.json'".format(self.gw))
 
@@ -253,7 +476,7 @@ class Scraper():
                             results[c['user_id']]['defeat'] = c['defeat']
                             results[c['user_id']]['rank'] = c['rank']
                 except Exception as e:
-                    print(e)
+                    print(self.pexc(e))
             self.writeFile(results, 'GW{}_player_full.json'.format(self.gw))
             print("Done, saved to 'GW{}_player_full.json'".format(self.gw))
 
@@ -266,7 +489,7 @@ class Scraper():
                 with open('GW{}_crew_full.json'.format(self.gw)) as f:
                     cdata = json.load(f)
             except Exception as ex:
-                print("Error:", ex)
+                print("Error:", self.pexc(ex))
                 return
             conn = sqlite3.connect('GW{}.sql'.format(self.gw))
             c = conn.cursor()
@@ -281,48 +504,16 @@ class Scraper():
             print('Done')
             return True
         except Exception as e:
-            print('makedb(): ' + str(e))
+            print('makedb(): ' + self.pexc(e))
             return False
 
-    def makebotdb(self, mode = 0): # make a SQL file (useful for searching the whole thing)
-        try:
-            print("Building Database...")
-            try:
-                with open('GW{}_crew_full.json'.format(self.gw)) as f:
-                    cdata = json.load(f)
-                with open('GW{}_player_full.json'.format(self.gw)) as f:
-                    pdata = json.load(f)
-            except Exception as ex:
-                print("Error:", ex)
-                return
-            conn = sqlite3.connect('GW.sql')
-            c = conn.cursor()
-            c.execute('CREATE TABLE info (id int, ver int)')
-            c.execute("INSERT INTO info VALUES ({}, 2)".format(self.gw))
-            c.execute('CREATE TABLE crews (ranking int, id int, name text, preliminaries int, total_1 int, total_2 int, total_3 int, total_4 int)')
-            for id in cdata:
-                c.execute("INSERT INTO crews VALUES ({},{},'{}',{},{},{},{},{})".format(cdata[id].get('ranking', 'NULL'), id, cdata[id]['name'].replace("'", "''"), cdata[id].get('prelim', 'NULL'), cdata[id].get('d1', 'NULL'), cdata[id].get('d2', 'NULL'), cdata[id].get('d3', 'NULL'), cdata[id].get('d4', 'NULL')))
-            c.execute('CREATE TABLE players (ranking int, id int, name text, current_total int)')
-            for id in pdata:
-                if mode == 1:
-                    c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('prelim', 'NULL')))
-                elif mode == 2:
-                    c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('d1', 'NULL')))
-                elif mode == 3:
-                    c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('d2', 'NULL')))
-                elif mode == 4:
-                    c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('d3', 'NULL')))
-                elif (mode == 0 and pdata[id].get('rank', 'NULL') != 'NULL'):
-                    c.execute("INSERT INTO players VALUES ({},{},'{}',{})".format(pdata[id].get('rank', 'NULL'), id, pdata[id]['name'].replace("'", "''"), pdata[id].get('d4', 'NULL')))
-            conn.commit()
-            conn.close()
-            print('Done')
-            return True
-        except Exception as e:
-            print('makebotdb(): ' + str(e))
-            return False
-
-    def build_crew_list(self, temp=None): # build the gbfg leechlists on a .csv format
+    def build_crew_list(self, you_mode=False): # build the gbfg leechlists on a .csv format
+        temp = self.gw_to_file(self.check_gw())
+        if temp is None:
+            print("Invalid GW state to continue")
+            return
+        elif temp == "d4" or you_mode == True:
+            temp = None # no temp mode for last day or you_mode
         remove_punctuation_map = dict((ord(char), None) for char in '\/*?:"<>|')
         try:
             with open('gbfg.json') as f:
@@ -330,13 +521,16 @@ class Scraper():
             with open('GW{}_player_full.json'.format(self.gw)) as f:
                 players = json.load(f)
         except Exception as e:
-            print("Error:", e)
+            print("Error:", self.pexc(e))
             return
         # one crew by one
         for c in gbfg:
+            if you_mode and c not in ["581111"]: continue
             if 'private' in gbfg[c]: continue # ignore private crews
             name = self.gbfg_nicknames.get(c, gbfg[c]['name']).translate(remove_punctuation_map)
-            with open("GW{}_{}.csv".format(self.gw, name), 'w', newline='', encoding="utf-8") as csvfile:
+            if you_mode: filename = "GW{}_(You)_not_sorted.csv".format(self.gw)
+            else: filename = "GW{}_{}.csv".format(self.gw, name)
+            with open(filename, 'w', newline='', encoding="utf-8") as csvfile:
                 llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
                 llwriter.writerow(["", "#", "id", "name", "rank", "battle", "preliminaries", "interlude & day 1", "total 1", "day 2", "total 2", "day 3", "total 3", "day 4", "total 4"])
                 l = []
@@ -345,37 +539,42 @@ class Scraper():
                         if p['is_leader']: players[str(p['id'])]['name'] += " (c)"
                         l.append(players[str(p['id'])])
                         l[-1]['id'] = str(p['id'])
-                    else: l.append(p)
-                crew_size = len(l)
-                total = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                for i in range(0, crew_size):
-                    if temp is None:
-                        mini = 999999999
-                        idx = -1
-                        for li in range(0, len(l)):
-                            if 'rank' in l[li] and int(l[li]['rank']) <= mini:
-                                mini = int(l[li]['rank'])
-                                idx = li
                     else:
-                        mini = -1
-                        idx = -1
-                        for li in range(0, len(l)):
-                            if temp in l[li] and int(l[li][temp]) >= mini:
-                                mini = int(l[li][temp])
-                                idx = li
+                        l.append(p)
+                crew_size = len(l)
+                values = [[], [], [], [], [], [], [], [], [], [], []]
+                for i in range(0, crew_size):
+                    if not you_mode:
+                        if temp is None:
+                            mini = 999999999
+                            idx = -1
+                            for li in range(0, len(l)):
+                                if 'rank' in l[li] and int(l[li]['rank']) <= mini:
+                                    mini = int(l[li]['rank'])
+                                    idx = li
+                        else:
+                            mini = -1
+                            idx = -1
+                            for li in range(0, len(l)):
+                                if temp in l[li] and int(l[li][temp]) >= mini:
+                                    mini = int(l[li][temp])
+                                    idx = li
+                    else:
+                        idx = 0
                     if idx != -1:
                         pname = l[idx]['name'].replace('"', '\\"')
                         llwriter.writerow([str(i+1), l[idx].get('rank', 'n/a'), l[idx]['id'], pname, l[idx]['level'], l[idx].get('defeat', 'n/a'), l[idx].get('prelim', 'n/a'), l[idx].get('delta_d1', 'n/a'), l[idx].get('d1', 'n/a'), l[idx].get('delta_d2', 'n/a'), l[idx].get('d2', 'n/a'), l[idx].get('delta_d3', 'n/a'), l[idx].get('d3', 'n/a'), l[idx].get('delta_d4', 'n/a'), l[idx].get('d4', 'n/a')])
-                        total[0] += int(l[idx]['level'])
-                        total[1] += int(l[idx].get('prelim', '0'))
-                        total[2] += int(l[idx].get('delta_d1', '0'))
-                        total[3] += int(l[idx].get('d1', '0'))
-                        total[4] += int(l[idx].get('delta_d2', '0'))
-                        total[5] += int(l[idx].get('d2', '0'))
-                        total[6] += int(l[idx].get('delta_d3', '0'))
-                        total[7] += int(l[idx].get('d3', '0'))
-                        total[8] += int(l[idx].get('delta_d4', '0'))
-                        total[9] += int(l[idx].get('d4', '0'))
+                        values[0].append(int(l[idx]['level']))
+                        if 'defeat' in l[idx]: values[1].append(int(l[idx]['defeat']))
+                        if 'prelim' in l[idx]: values[2].append(int(l[idx]['prelim']))
+                        if 'delta_d1' in l[idx]: values[3].append(int(l[idx]['delta_d1']))
+                        if 'd1' in l[idx]: values[4].append(int(l[idx]['d1']))
+                        if 'delta_d2' in l[idx]: values[5].append(int(l[idx]['delta_d2']))
+                        if 'd2' in l[idx]: values[6].append(int(l[idx]['d2']))
+                        if 'delta_d3' in l[idx]: values[7].append(int(l[idx]['delta_d3']))
+                        if 'd3' in l[idx]: values[8].append(int(l[idx]['d3']))
+                        if 'delta_d4' in l[idx]: values[9].append(int(l[idx]['delta_d4']))
+                        if 'd4' in l[idx]: values[10].append(int(l[idx]['d4']))
                         l.pop(idx)
                     else:
                         pname = l[0]['name'].replace('"', '\\"')
@@ -384,21 +583,22 @@ class Scraper():
                                 if p['is_leader']: pname += " (c)"
                                 break
                         llwriter.writerow([str(i+1), 'n/a', l[0]['id'], pname, l[0]['level'], 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a'])
-                        total[0] += int(l[0]['level'])
+                        values[0].append(int(l[0]['level']))
                         l.pop(0)
-                llwriter.writerow(['', '', '', 'average', str(total[0]//crew_size), '', '', '', '', '', '', '', '', '', ''])
-                llwriter.writerow(['', '', '', 'total', '', '', str(total[1]), str(total[2]), str(total[3]), str(total[4]), str(total[5]), str(total[6]), str(total[7]), str(total[8]), str(total[9])])
+                llwriter.writerow(['', '', '', 'average', self.avg_of(values[0]), self.avg_of(values[1]), self.avg_of(values[2]), self.avg_of(values[3]), self.avg_of(values[4]), self.avg_of(values[5]), self.avg_of(values[6]), self.avg_of(values[7]), self.avg_of(values[8]), self.avg_of(values[9]), self.avg_of(values[10])])
+                llwriter.writerow(['', '', '', 'median', self.med_of(values[0]), self.med_of(values[1]), self.med_of(values[2]), self.med_of(values[3]), self.med_of(values[4]), self.med_of(values[5]), self.med_of(values[6]), self.med_of(values[7]), self.med_of(values[8]), self.med_of(values[9]), self.med_of(values[10])])
+                llwriter.writerow(['', '', '', 'total', '', '', self.sum_of(values[2]), self.sum_of(values[3]), self.sum_of(values[4]), self.sum_of(values[5]), self.sum_of(values[6]), self.sum_of(values[7]), self.sum_of(values[8]), self.sum_of(values[9]), self.sum_of(values[10])])
                 llwriter.writerow(['', '', '', '', '', '', '', '', '', '', '', '', '', '', ''])
                 gname = gbfg[c]['name'].replace('"', '\\"')
                 llwriter.writerow(['', 'guild', str(c), gname, '', '', '', '', '', '', '', '', '', '', ''])
-                print("GW{}_{}.csv: Done".format(self.gw, name))
+                print("{}: Done".format(filename))
 
-    def build_temp_crew_ranking_list(self): # same thing but while gw is on going (work a bit differently, useful for scouting enemies)
+    def build_temp_crew_ranking_list(self): # same thing but while gw is on going (work a bit differently, might be useful for scouting enemies)
         try:
             with open('GW{}_crew_full.json'.format(self.gw)) as f:
                 crews = json.load(f)
         except Exception as e:
-            print("Error:", e)
+            print("Error:", self.pexc(e))
             return
         with open("GW{}_Crews.csv".format(self.gw), 'w', newline='', encoding="utf-8") as csvfile:
             llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
@@ -434,52 +634,6 @@ class Scraper():
                 llwriter.writerow(row)
             print("GW{}_Crews.csv: Done".format(self.gw))
 
-    def build_you_not_sorted(self): # build the (You) leechlist on a .csv format (without sorting)
-        remove_punctuation_map = dict((ord(char), None) for char in '\/*?:"<>|')
-        try:
-            with open('gbfg.json') as f:
-                gbfg = json.load(f)
-            with open('GW{}_player_full.json'.format(self.gw)) as f:
-                players = json.load(f)
-        except Exception as e:
-            print("Error:", e)
-            return
-        # one crew by one
-        for c in gbfg:
-            if c not in ["581111"]: continue
-            if 'private' in gbfg[c]: continue # ignore private crews
-            with open("GW{}_{}.csv".format(self.gw, gbfg[c]['name'].translate(remove_punctuation_map)), 'w', newline='', encoding="utf-8") as csvfile:
-                llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
-                llwriter.writerow(["", "#", "id", "name", "rank", "battle", "preliminaries", "interlude & day 1", "total 1", "day 2", "total 2", "day 3", "total 3", "day 4", "total 4"])
-                l = []
-                for p in gbfg[c]['player']:
-                    if str(p['id']) in players:
-                        if p['is_leader']: players[str(p['id'])]['name'] += " (c)"
-                        l.append(players[str(p['id'])])
-                        l[-1]['id'] = str(p['id'])
-                    else: l.append(p)
-                crew_size = len(l)
-                total = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                for i in range(0, crew_size):
-                    pname = l[i]['name'].replace('"', '\\"')
-                    llwriter.writerow([str(i+1), l[i].get('rank', 'n/a'), l[i]['id'], pname, l[i]['level'], l[i].get('defeat', 'n/a'), l[i].get('prelim', 'n/a'), l[i].get('delta_d1', 'n/a'), l[i].get('d1', 'n/a'), l[i].get('delta_d2', 'n/a'), l[i].get('d2', 'n/a'), l[i].get('delta_d3', 'n/a'), l[i].get('d3', 'n/a'), l[i].get('delta_d4', 'n/a'), l[i].get('d4', 'n/a')])
-                    total[0] += int(l[i]['level'])
-                    total[1] += int(l[i].get('prelim', '0'))
-                    total[2] += int(l[i].get('delta_d1', '0'))
-                    total[3] += int(l[i].get('d1', '0'))
-                    total[4] += int(l[i].get('delta_d2', '0'))
-                    total[5] += int(l[i].get('d2', '0'))
-                    total[6] += int(l[i].get('delta_d3', '0'))
-                    total[7] += int(l[i].get('d3', '0'))
-                    total[8] += int(l[i].get('delta_d4', '0'))
-                    total[9] += int(l[i].get('d4', '0'))
-                llwriter.writerow(['', '', '', 'average', str(total[0]//crew_size), '', '', '', '', '', '', '', '', '', ''])
-                llwriter.writerow(['', '', '', 'total', '', '', str(total[1]), str(total[2]), str(total[3]), str(total[4]), str(total[5]), str(total[6]), str(total[7]), str(total[8]), str(total[9])])
-                llwriter.writerow(['', '', '', '', '', '', '', '', '', '', '', '', '', '', ''])
-                gname = gbfg[c]['name'].replace('"', '\\"')
-                llwriter.writerow(['', 'guild', str(c), gname, '', '', '', '', '', '', '', '', '', '', ''])
-                print("GW{}_{}.csv: Done".format(self.gw, gbfg[c]['name'].translate(remove_punctuation_map)))
-
     def build_crew_ranking_list(self): # build the ranking of all the gbfg crews
         try:
             with open('gbfg.json') as f:
@@ -487,7 +641,7 @@ class Scraper():
             with open('GW{}_crew_full.json'.format(self.gw)) as f:
                 crews = json.load(f)
         except Exception as e:
-            print("Error:", e)
+            print("Error:", self.pexc(e))
             return
         with open("GW{}_Crews.csv".format(self.gw), 'w', newline='', encoding="utf-8") as csvfile:
             llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
@@ -529,7 +683,7 @@ class Scraper():
             with open('GW{}_player_full.json'.format(self.gw)) as f:
                 players = json.load(f)
         except Exception as e:
-            print("Error:", e)
+            print("Error:", self.pexc(e))
             return
         l = []
         for c in gbfg:
@@ -582,7 +736,7 @@ class Scraper():
                 if 'private' in final[c]: public -= 1
             print(public, "/", len(final), "public crew(s)")
         except Exception as e:
-            print("Failed: ", e)
+            print("Failed: ", self.pexc(e))
 
     def buildRequest(self, url, payload=None): # to request stuff to gbf
         headers = {'Cookie': self.data['cookie'], 'Referer': 'https://game.granbluefantasy.jp/', 'Origin': 'https://game.granbluefantasy.jp', 'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'X-Requested-With': 'XMLHttpRequest', 'X-VERSION': str(self.version), 'Accept': 'application/json, text/javascript, */*; q=0.01', 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive', 'Content-Type': 'application/json'}
@@ -654,7 +808,7 @@ class Scraper():
             if not os.path.exists('gbfg'):
                 try: os.makedirs('gbfg')
                 except Exception as e:
-                    print("Couldn't create a 'gbfg' directory:", e)
+                    print("Couldn't create a 'gbfg' directory:", self.pexc(e))
                     return
             c = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             try:
@@ -670,7 +824,7 @@ class Scraper():
             with open('gbfg.json') as f:
                 gbfg = json.load(f)
         except Exception as e:
-            print("Error:", e)
+            print("Error:", self.pexc(e))
             return
         l = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
@@ -767,93 +921,245 @@ class Scraper():
             print("Error", pid, e)
             return None
 
+    def interface(self):
+        # main loop
+        while True:
+            try:
+                print("\nMain Menu\n[0] Download Crew\n[1] Download Player\n[2] Download All\n[3] Compile Data\n[4] Build Database\n[5] Build Crew Lists\n[6] Build Crew Ranking\n[7] Build Player Ranking\n[8] Build Images for .csv in current folder\n[9] Do All (Only on day 4 and 5)\n[10] Advanced\n[Any] Quit")
+                i = input("Input: ")
+                print('')
+                if i == "0": self.run(1)
+                elif i == "1": self.run(2)
+                elif i == "2": self.run(0)
+                elif i == "3": self.buildGW()
+                elif i == "4": self.makedb()
+                elif i == "5": self.build_crew_list()
+                elif i == "6": self.build_crew_ranking_list()
+                elif i == "7": self.build_player_list()
+                elif i == "8": self.leechlist_image()
+                elif i == "9":
+                    if self.check_gw() in [4]:
+                        print("[0/8] Downloading final day")
+                        self.run(0)
+                        print("[1/8] Compiling Data")
+                        self.buildGW()
+                        print("[2/8] Building a SQL database")
+                        self.makedb()
+                        print("[3/8] Updating /gbfg/ data")
+                        self.downloadGbfg()
+                        self.buildGbfgFile()
+                        print("[4/8] Building crew .csv files")
+                        self.build_crew_list()
+                        print("[5/8] Building the crew ranking .csv file")
+                        self.build_crew_ranking_list()
+                        print("[6/8] Building the player ranking .csv file")
+                        self.build_player_list()
+                        print("[7/8] Building images for .csv files")
+                        self.leechlist_image()
+                        print("[8/8] Complete")
+                    else:
+                        print("Invalid GW state to continue")
+                        print("This setting is only usable on the last day")
+                elif i == "10":
+                    while True:
+                        print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary /gbfg/ Ranking\n[2] Download /gbfg/ member list\n[3] Download a crew member list\n[4] Build (You) Leechlist (non-sorted)\n[5] Build /gbfg/ History\n[6] Toggle Temp GW ID\n[Any] Quit")
+                        i = input("Input: ")
+                        print('')
+                        if i == "0": self.buildGbfgFile()
+                        elif i == "1": self.build_temp_crew_ranking_list()
+                        elif i == "2": self.downloadGbfg()
+                        elif i == "3":
+                            print("Please input the crew(s) id (Leave blank to cancel)")
+                            i = input("Input: ")
+                            if i == "": pass
+                            else:
+                                try:
+                                    i = i.split()
+                                    print(i)
+                                    l = []
+                                    for x in i: l.append(int(x))
+                                    print(l)
+                                    self.downloadGbfg(*l)
+                                except: print("Please input a number")
+                        elif i == "4": self.build_crew_list(you_mode=True)
+                        elif i == "5": self.build_history()
+                        elif i == "6": self.toggle_temp_data()
+                        else: break
+                        self.save()
+                else: exit(0)
+            except Exception as e:
+                print("Critical error:", self.pexc(e))
+            self.save()
+
+    def leechlist_image(self):
+        # colors
+        tiers = [
+            { # players
+                2000 : ["#ffebb3", "#f7f1e1"],
+                90000 : ["#ccf0e6", "#edfffa"],
+                140000 : ["#ccffb3", "#f6fff2"],
+                270000 : ["#e6d5bc", "#f5eee4"],
+                370000 : ["#d4c7c7", "#d4d4d4"],
+                9999999999: ["#f5d0d0", "#ffb3b3"]
+            },
+            { # crews
+                2500 : ["#ffebb3", "#f7f1e1"],
+                5500 : ["#ccf0e6", "#edfffa"],
+                9000 : ["#ccffb3", "#f6fff2"],
+                14000 : ["#e6d5bc", "#f5eee4"],
+                30000 : ["#d4c7c7", "#d4d4d4"],
+                9999999999: ["#f5d0d0", "#ffb3b3"]
+            }
+        ]
+        header_color = "#006600"
+        first_col_color = ["#f7eee1", "#ffdeb3"]
+        na_color = ["#f5d0d0", "#ffb3b3"]
+
+        # Get csv list
+        csv_files = glob.glob("*.csv")
+
+        if len(csv_files) == 0: return
+
+        # make output folder
+        output_folder = "images"
+        try: os.mkdir(output_folder)
+        except: pass
+
+        # Load the font using FontManager
+        prop = fm.FontProperties(fname='C:\\Windows\\Fonts\\INSTALL_THIS_UNICODE_FONT.ttf')
+
+        for filename in csv_files:
+            print("Opening", filename)
+            # Load csv
+            df = pd.read_csv(filename)
+
+            if len(df) > 50: # for Players.csv or History.csv
+                if filename.endswith('_Players.csv'):
+                    isplayerfile = True
+                    player_index = 16
+                elif filename.endswith('_History.csv'):
+                    isplayerfile = True
+                    player_index = 18
+                if len(df) > 300:
+                    df = df.head(300) # limit to 300 players
+                part_count = int(math.ceil(len(df) / 50.0))
+                
+                index = 0
+                parts = [df.iloc[:50]]
+                for i in range(1, part_count):
+                    parts.append(df.iloc[50*i:min(len(df), 50*(i+1))])
+                    parts[-1].reset_index(drop=True, inplace=True) # reset index of subsequent parts
+                df = pd.concat(parts, axis=1) # concatenate parts
+            else:
+                isplayerfile = False
+                player_index = 16
+            iscrewfile = (filename.endswith('_Crews.csv'))
+
+            # Replace NaN values with an empty string
+            df.replace(np.nan, '', inplace=True)
+
+            # Create a figure and axis for plotting
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.axis('off')
+
+            # Plot the table using ax.table()
+            table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='left', loc='center')
+            table.auto_set_font_size(False)
+            table.set_fontsize(12)
+            table.scale(1, 1.5)
+
+            empty_lines = set() # for player files
+
+            element_count = 0
+            id_col = set()
+            guild_col = set()
+            name_col = set()
+            best_col = set()
+            # read first row
+            for key, cell in table.get_celld().items():
+                if key[0] != 0: continue
+                cell_text = cell.get_text().get_text()
+                if cell_text.endswith('.1') or cell_text.endswith('.2'):
+                    cell.get_text().set_text(cell_text[:-2])
+                if cell_text == "id": id_col.add(key[1])
+                elif cell_text == "guild": guild_col.add(key[1])
+                elif cell_text == "name": name_col.add(key[1])
+                elif cell_text == "best ranked" or cell_text == "best contrib.": best_col.add(key[1])
+
+            # Set the font properties for each text object within the cells
+            for key, cell in table.get_celld().items():
+                cell.set_text_props(fontproperties=prop)
+                cell.set_edgecolor('none')
+                # Format float numbers as integers, with thousand separators
+                cell_text = cell.get_text().get_text()
+                if cell_text.replace(".", "").isnumeric():
+                    if key[1] in id_col: # ID formatting
+                        cell.get_text().set_text(str(int(float(cell_text))))
+                    else:
+                        cell.get_text().set_text('{:,}'.format(int(float(cell_text))))
+                    if key[1] == 0: # counting number of elements (first column)
+                        element_count = max(element_count, int(cell.get_text().get_text()))
+                if isplayerfile and (key[1] % player_index) == 0 and key[1] >= player_index and cell_text == "":
+                    empty_lines.add("{}-{}".format(key[0], key[1] // player_index))
+
+            ldf = len(df) # data length
+            for key, cell in table.get_celld().items():
+                # Format other strings
+                row_index, col_index = key
+                if isplayerfile:
+                    col_part = col_index // player_index
+                    col_index = col_index % player_index
+                cell_text = cell.get_text().get_text()
+                if row_index == 0 and (col_index == 0 or (isplayerfile and col_index == 0)): # Hide the content of the first cell
+                    cell.get_text().set_text("")
+                elif cell_text == "":
+                    if isplayerfile and "{}-{}".format(row_index, col_part) in empty_lines:
+                        pass # do nothing
+                    elif row_index <= element_count:
+                        cell.get_text().set_text("n/a")
+                elif cell_text == "id":
+                    cell.get_text().set_text("ID")
+                else:
+                    if col_index in guild_col and row_index > 0: # guild column
+                        pass # no formatting
+                    elif col_index in best_col and row_index > 0: # best column (History.csv)
+                        pass # no formatting
+                    elif col_index in name_col and row_index > 0: # name
+                        pass # no formatting
+                    else:
+                        cell.get_text().set_text(cell_text.capitalize().replace('& d', '& D'))
+
+                # Alternating row colors
+                if isplayerfile:
+                    row_index, col_index = key
+                    index = (row_index - 1) + (col_index // player_index) * (ldf + 1)
+                else:
+                    index = row_index
+                if row_index == 0: # header
+                    table[key].set_facecolor(header_color)
+                    table[key].get_text().set_color('#ffffff')
+                elif row_index <= element_count:
+                    color_index = (index + 1) % 2
+                    cell_text = cell.get_text().get_text()
+                    if col_index == 0 or (isplayerfile and (col_index % player_index) == 0): # first column
+                        table[key].set_facecolor(first_col_color[color_index])
+                    elif cell.get_text().get_text() == "n/a":
+                        table[key].set_facecolor(na_color[color_index])
+                    else:
+                        try: ranking = int(table._cells[(row_index, col_index + 1 - col_index % player_index)]._text.get_text().replace(',', ''))
+                        except: ranking = 9999999998
+                        for k, v in tiers[iscrewfile].items():
+                            if ranking < k:
+                                table[key].set_facecolor(v[color_index])
+                                break
+
+            # Automatically adjust the cell size to fit the text
+            table.auto_set_column_width(col=list(range(len(df.columns))))
+
+            # Save the image
+            plt.savefig(output_folder + '/' + filename.replace('.csv', '.png'), bbox_inches='tight')
+            plt.close()
+            print(filename.replace('.csv', '.png'), "done")
+
 if __name__ == "__main__":
-    # we start here
-    print("GW Ranking Scraper 1.15")
-    # gw num
-    while True:
-        try:
-            i = int(input("Please input the GW number: "))
-            break
-        except:
-            pass
-    # init
-    try:
-        scraper = Scraper(i)
-    except Exception as e:
-        print(e)
-        exit(0)
-    # main loop
-    while True:
-        try:
-            print("\nMain Menu\n[0] Download Crew\n[1] Download Player\n[2] Download All\n[3] Compile Crew Data\n[4] Compile Player Data\n[5] Build Database\n[6] Build Crew Lists\n[7] Build Crew Ranking\n[8] Build Player Ranking\n[9] Compile and Build all\n[10] Advanced\n[Any] Quit")
-            i = input("Input: ")
-            print('')
-            if i == "0": scraper.run(1)
-            elif i == "1": scraper.run(2)
-            elif i == "2": scraper.run(0)
-            elif i == "3": scraper.buildGW(1)
-            elif i == "4": scraper.buildGW(2)
-            elif i == "5": scraper.makedb()
-            elif i == "6": scraper.build_crew_list()
-            elif i == "7": scraper.build_crew_ranking_list()
-            elif i == "8": scraper.build_player_list()
-            elif i == "9":
-                print("[0/6] Compiling Data")
-                scraper.buildGW()
-                print("[1/6] Building a SQL database")
-                scraper.makedb()
-                print("[2/6] Updating /gbfg/ data")
-                scraper.downloadGbfg()
-                scraper.buildGbfgFile()
-                print("[3/6] Building crew .csv files")
-                scraper.build_crew_list()
-                print("[4/6] Building the crew ranking .csv file")
-                scraper.build_crew_ranking_list()
-                print("[5/6] Building the player ranking .csv file")
-                scraper.build_player_list()
-                print("[6/6] Complete")
-            elif i == "10":
-                while True:
-                    print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary Crew Lists\n[2] Build Temporary /gbfg/ Ranking\n[3] Download /gbfg/ member list\n[4] Download a crew member list\n[5] Make Temporary MizaBOT database\n[6] Make Final MizaBOT database\n[7] Build (You) Leechlist (non-sorted)\n[8] Build /gbfg/ History\n[Any] Quit")
-                    i = input("Input: ")
-                    print('')
-                    if i == "0": scraper.buildGbfgFile()
-                    elif i == "1":
-                        days = ['prelim', 'd1', 'd2', 'd3']
-                        print("Input the current day (Leave blank to cancel):", days)
-                        i = input("Input: ")
-                        if i == "": pass
-                        elif i not in days: print("Invalid day")
-                        else: scraper.build_crew_list(i)
-                    elif i == "2": scraper.build_temp_crew_ranking_list()
-                    elif i == "3": scraper.downloadGbfg()
-                    elif i == "4":
-                        print("Please input the crew(s) id (Leave blank to cancel)")
-                        i = input("Input: ")
-                        if i == "": pass
-                        else:
-                            try:
-                                i = i.split()
-                                print(i)
-                                l = []
-                                for x in i: l.append(int(x))
-                                print(l)
-                                scraper.downloadGbfg(*l)
-                            except: print("Please input a number")
-                    elif i == "5": 
-                        days = ['prelim', 'd1', 'd2', 'd3']
-                        print("Input the current day (Leave blank to cancel):", days)
-                        i = input("Input: ")
-                        if i == "": pass
-                        elif i not in days: print("Invalid day")
-                        else: scraper.makebotdb(days.index(i) + 1)
-                    elif i == "6": scraper.makebotdb(0)
-                    elif i == "7": scraper.build_you_not_sorted()
-                    elif i == "8": scraper.build_history()
-                    else: break
-                    scraper.save()
-            else: exit(0)
-        except Exception as e:
-            print("Critical error:", e)
-        scraper.save()
+    Scraper().interface()
