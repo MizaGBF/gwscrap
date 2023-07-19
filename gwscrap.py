@@ -151,7 +151,7 @@ class Scraper():
                     case (0|10) as d:
                         print("State: Preliminaries" + ("(On going)" if d >= 10 else ""))
                         if d == 0:
-                            if input("Currently on going, are you sure you wanna continue ('y' to continue):").lower() != 's':
+                            if input("Currently on going, are you sure you wanna continue ('y' to continue):").lower() != 'y':
                                 return None
                         return 0
                     case 1|11:
@@ -159,11 +159,11 @@ class Scraper():
                         return 0
                     case (2|3|4|5|12|13|14|15) as d:
                         if d > 10:
-                            print("State: Day ", d-11, "(On going)")
+                            print("State: Day ", d-11)
                             return d-11
                         else:
-                            print("State: Day ", d-1)
-                            if input("Currently on going, are you sure you wanna continue ('y' to continue):").lower() != 's':
+                            print("State: Day ", d-1, "(On going)")
+                            if input("Currently on going, are you sure you wanna continue ('y' to continue):").lower() != 'y':
                                 return None
                             return d-1
                     case 20:
@@ -262,13 +262,13 @@ class Scraper():
             for i in range(1, len(it)): # loop to not copy paste this 5 more times
                 if current_time >= self.gw_dates[it[i]]:
                     d = self.gw_dates[it[i-1]] - current_time
-                    if d < timedelta(seconds=18000): return 16 - i
+                    if d < timedelta(seconds=25200): return 16 - i
                     else: return 6 - i
         elif current_time > self.gw_dates["Interlude"]:
             return 1
         elif current_time > self.gw_dates["Preliminaries"]:
             d = self.gw_dates['Interlude'] - current_time
-            if d < timedelta(seconds=18000): return 10
+            if d < timedelta(seconds=25200): return 10
             else: return 0
         else:
             return -2
