@@ -10,8 +10,6 @@ import signal
 import sqlite3
 import csv
 import os
-from os import listdir
-from os.path import isfile, join
 from bs4 import BeautifulSoup
 import statistics
 import traceback
@@ -24,7 +22,7 @@ import glob
 
 class Scraper():
     def __init__(self):
-        print("GW Ranking Scraper 2.1")
+        print("GW Ranking Scraper 2.2")
         self.gbfg_ids = ["1744673", "645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1807204", "472465", "1161924", "432330", "1629318", "1837508", "1880420", "678459", "632242", "1141898", "1380234", "1601132", "1580990", "844716", "581111", "1010961"]
         self.gbfg_nicknames = {
             "1837508" : "Nier!",
@@ -587,7 +585,7 @@ class Scraper():
                         l.pop(0)
                 llwriter.writerow(['', '', '', 'average', self.avg_of(values[0]), self.avg_of(values[1]), self.avg_of(values[2]), self.avg_of(values[3]), self.avg_of(values[4]), self.avg_of(values[5]), self.avg_of(values[6]), self.avg_of(values[7]), self.avg_of(values[8]), self.avg_of(values[9]), self.avg_of(values[10])])
                 llwriter.writerow(['', '', '', 'median', self.med_of(values[0]), self.med_of(values[1]), self.med_of(values[2]), self.med_of(values[3]), self.med_of(values[4]), self.med_of(values[5]), self.med_of(values[6]), self.med_of(values[7]), self.med_of(values[8]), self.med_of(values[9]), self.med_of(values[10])])
-                llwriter.writerow(['', '', '', 'total', '', '', self.sum_of(values[2]), self.sum_of(values[3]), self.sum_of(values[4]), self.sum_of(values[5]), self.sum_of(values[6]), self.sum_of(values[7]), self.sum_of(values[8]), self.sum_of(values[9]), self.sum_of(values[10])])
+                llwriter.writerow(['', '', '', 'total', '', self.sum_of(values[1]), self.sum_of(values[2]), self.sum_of(values[3]), self.sum_of(values[4]), self.sum_of(values[5]), self.sum_of(values[6]), self.sum_of(values[7]), self.sum_of(values[8]), self.sum_of(values[9]), self.sum_of(values[10])])
                 llwriter.writerow(['', '', '', '', '', '', '', '', '', '', '', '', '', '', ''])
                 gname = gbfg[c]['name'].replace('"', '\\"')
                 llwriter.writerow(['', 'guild', str(c), gname, '', '', '', '', '', '', '', '', '', '', ''])
@@ -706,6 +704,7 @@ class Scraper():
                             l[-1]['id'] = str(p['id'])
                             l[-1]['guild'] = gbfg[c]['name']
                             l[-1]['leader'] = p['is_leader']
+                            break
                     if len(l) == 0:
                         l.append(players[str(p['id'])])
                         l[-1]['id'] = str(p['id'])
@@ -718,11 +717,12 @@ class Scraper():
             fname = ("GW{}_Captains.csv" if captain_mode else "GW{}_Players.csv").format(self.gw)
             with open(fname, 'w', newline='', encoding="utf-8") as csvfile:
                 llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
-                llwriter.writerow(["", "#", "id", "name", "guild", "rank", "battle", "preliminaries", "interlude & day 1", "total 1", "day 2", "total 2", "day 3", "total 3", "day 4", "total 4"])
+                llwriter.writerow(["", "#", "id", "name", "guild", "rank", "battle", "preliminaries", "interlude & day 1", "day 2", "day 3", "day 4", "final"])
                 for i in range(0, len(l)):
-                    pname = l[i]['name'].replace('"', '\\"') + (" (c)" if l[i]['leader'] else "")
+                    pname = l[i]['name'].replace('"', '\\"')
+                    if not captain_mode: pname += (" (c)" if l[i]['leader'] else "")
                     gname = l[i]['guild'].replace('"', '\\"')
-                    llwriter.writerow([str(i+1), l[i].get('rank', 'n/a'), l[i]['id'], pname, gname, l[i]['level'], l[i].get('defeat', 'n/a'), l[i].get('prelim', 'n/a'), l[i].get('delta_d1', 'n/a'), l[i].get('d1', 'n/a'), l[i].get('delta_d2', 'n/a'), l[i].get('d2', 'n/a'), l[i].get('delta_d3', 'n/a'), l[i].get('d3', 'n/a'), l[i].get('delta_d4', 'n/a'), l[i].get('d4', 'n/a')])
+                    llwriter.writerow([str(i+1), l[i].get('rank', 'n/a'), l[i]['id'], pname, gname, l[i]['level'], l[i].get('defeat', 'n/a'), l[i].get('prelim', 'n/a'), l[i].get('delta_d1', 'n/a'), l[i].get('delta_d2', 'n/a'), l[i].get('delta_d3', 'n/a'), l[i].get('delta_d4', 'n/a'), l[i].get('d4', 'n/a')])
             print("{}: Done".format(fname))
         else:
             print("Error, not sufficient or complete player data")
@@ -730,10 +730,10 @@ class Scraper():
     def buildGbfgFile(self): # check the gbfg folder for any json files and fuse the data into one
         # gbfg.json is used in other functions, it contains the crew member lists
         try:
-            files = [f for f in listdir('gbfg') if isfile(join('gbfg', f))]
+            files = glob.glob("gbfg/*.json")
             final = {}
             for fn in files:
-                with open('gbfg/{}'.format(fn)) as f:
+                with open('{}'.format(fn)) as f:
                     content = json.load(f)
                     for id in content:
                         if 'private' in content[id] and id in final:
@@ -848,10 +848,19 @@ class Scraper():
             count = 0
             countmax = len(futures)
             print("Requesting", countmax, "players to http://gbf.kohi-nattou.com/ ...")
+            gwrange = None
             for future in concurrent.futures.as_completed(futures):
                 r = future.result()
                 if r is not None:
-                    l.append(r)
+                    l.append(r[0])
+                    if r[1] is not None:
+                        if gwrange is None:
+                            gwrange = r[1]
+                        else:
+                            if r[1][0] < gwrange[0]:
+                                gwrange[0] = r[1][0]
+                            elif r[1][1] > gwrange[1]:
+                                gwrange[1] = r[1][1]
                 count += 1
                 if count >= countmax:
                     print("Progress: 100%")
@@ -864,69 +873,65 @@ class Scraper():
         for i in range(len(l)):
             l[i][0] = i + 1
         if len(l) > 0:
-            with open("GW{}_History.csv".format(self.gw), 'w', newline='', encoding="utf-8") as csvfile:
+            filename = "GW{}_History_for_GW{}-{}.csv".format(self.gw, gwrange[0], gwrange[1])
+            with open(filename, 'w', newline='', encoding="utf-8") as csvfile:
                 llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
-                llwriter.writerow(["", "#", "percentile", "id", "name", "guild", "rank", "gw range", "best ranked", "#", "contribution", "battles", "best contrib.", "#", "contribution", "battles", "total battles", "total honor"])
+                llwriter.writerow(["", "#", "percentile", "id", "name", "guild", "rank", "best ranked", "#", "best contrib.", "contribution", "total battles", "total honor"])
                 for i in range(0, len(l)):
                     llwriter.writerow(l[i])
-            print("GW{}_History.csv: Done".format(self.gw))
+            print("{}: Done".format(filename))
 
     def build_history_sub(self, pid, pname, plevel, cname):
         try:
             response = self.client.post("http://gbf.kohi-nattou.com/2023/07/15/test/", data={'id': str(pid), 'search': '検索'}, headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9", "Accept-Encoding": "gzip, deflate", "Connection": "keep-alive", "Host": "gbf.kohi-nattou.com", "Origin": "http://gbf.kohi-nattou.com", "Referer": "http://gbf.kohi-nattou.com/2023/07/15/test/", "User-Agent": "Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"}, timeout=30)
             if response.status_code != 200: raise Exception(str(response.status_code))
             soup = BeautifulSoup(response.text, 'html.parser')
-            d = [0, "", "", pid, pname, cname.replace('"', '\\"'), plevel, "", "", "", "", "", "", "", "", "", "", ""]
+            d = [0, "", "", pid, pname, cname.replace('"', '\\"'), plevel, "", "", "", "", "", ""]
             # part 1
             div = soup.find_all("div", class_="highlight-section")
             if len(div) == 0: return None
             div = div[0]
+            gwrange = None
             for children in div.findChildren(recursive=False):
                 if "highlight-title" in children.attrs["class"]:
-                    d[7]= children.text.split("さんの第")[1].split("までの古戦場の振り返り")[0].replace("回～第", " - ").replace("回", "")
+                    gwrange = children.text.split("さんの第")[1].split("までの古戦場の振り返り")[0].replace("回～第", "-").replace("回", "").split('-') # range
+                    gwrange[0] = int(gwrange[0])
+                    gwrange[1] = int(gwrange[1])
                 elif "highlight-info" in children.attrs["class"]:
                     for cd in children.findChildren(recursive=False):
                         if "highlight-info-item" in cd.attrs["class"]:
                             cc = cd.findChildren()
                             if cc[0].text == "合計貢献度:":
-                                d[17] = cc[1].text.replace(',', '')
+                                d[12] = cc[1].text.replace(',', '') # total honors
                             elif cc[0].text == "合計討伐数:":
-                                d[16] = cc[1].text.replace(',', '').replace(' 体', '')
+                                d[11] = cc[1].text.replace(',', '').replace(' 体', '') # total battles
                             elif cc[0].text == "貢献度ランキング：":
-                                d[1] = int(cc[1].text.replace(',', '').replace(' 位', ''))
+                                d[1] = int(cc[1].text.replace(',', '').replace(' 位', '')) # rank
                 elif "highlight-label2" in children.attrs["class"]:
                     d[2] = children.text.split("あなたは上位")[1].replace("の騎空士です", "")
             # part 2
             div = soup.find_all("div", class_="highlight-section2")[0]
             for children in div.findChildren(recursive=False):
                 if "highlight-title" in children.attrs["class"]:
-                    d[8] = "GW " + children.text.split("最も順位が高かったのは第")[1].split("回古戦場")[0]
+                    d[7] = "GW " + children.text.split("最も順位が高かったのは第")[1].split("回古戦場")[0] # best ranked gw
                 elif "highlight-info" in children.attrs["class"]:
                     for cd in children.findChildren(recursive=False):
                         if "highlight-info-item" in cd.attrs["class"]:
                             cc = cd.findChildren()
-                            if cc[0].text == "貢献度:":
-                                d[10] = cc[1].text.replace(',', '')
-                            elif cc[0].text == "討伐数:":
-                                d[11] = cc[1].text.replace(',', '').replace(' 体', '')
-                            elif cc[0].text == "順位:":
-                                d[9] = cc[1].text.replace(',', '').replace(' 位', '')
+                            if cc[0].text == "順位:":
+                                d[8] = cc[1].text.replace(',', '').replace(' 位', '') # rank
             # part 3
             div = soup.find_all("div", class_="highlight-section3")[0]
             for children in div.findChildren(recursive=False):
                 if "highlight-title" in children.attrs["class"]:
-                    d[12] = "GW " + children.text.split("最も貢献度を稼いだのは第")[1].split("回古戦場")[0]
+                    d[9] = "GW " + children.text.split("最も貢献度を稼いだのは第")[1].split("回古戦場")[0] # best contrib gw
                 elif "highlight-info" in children.attrs["class"]:
                     for cd in children.findChildren(recursive=False):
                         if "highlight-info-item" in cd.attrs["class"]:
                             cc = cd.findChildren()
                             if cc[0].text == "貢献度:":
-                                d[14] = cc[1].text.replace(',', '')
-                            elif cc[0].text == "討伐数:":
-                                d[15] = cc[1].text.replace(',', '').replace(' 体', '')
-                            elif cc[0].text == "順位:":
-                                d[13] = cc[1].text.replace(',', '').replace(' 位', '')
-            return d
+                                d[10] = cc[1].text.replace(',', '') # honor
+            return d, gwrange
         except Exception as e:
             if str(e) == "timed out":
                 return self.build_history_sub(pid, pname, plevel, cname)
@@ -938,7 +943,7 @@ class Scraper():
         self.check_gw(no_ongoing_check=True)
         while True:
             try:
-                print("\nMain Menu\n[0] Download Crew Ranking\n[1] Download Player Ranking\n[2] Download Crew and Player Ranking\n[3] Compile Ranking Data\n[4] Build SQL Database\n[5] Build /gbfg/ Lists\n[6] Build /gbfg/ Crew Ranking\n[7] Build /gbfg/ Player and Captain Rankings\n[8] Convert .csv into images\n[9] Do All (Only on day 4 and 5)\n[10] Advanced\n[Any] Quit")
+                print("\nMain Menu\n[0] Download Crew Ranking\n[1] Download Player Ranking\n[2] Download Crew and Player Ranking\n[3] Compile Ranking Data\n[4] Build SQL Database\n[5] Build /gbfg/ Lists\n[6] Build /gbfg/ Crew Ranking\n[7] Build /gbfg/ Player and Captain Rankings\n[8] Convert CSV into images\n[9] Do All (Only on day 4 and 5)\n[10] Advanced\n[Any] Quit")
                 i = input("Input: ")
                 print('')
                 if i == "0": self.run(1)
@@ -954,26 +959,32 @@ class Scraper():
                 elif i == "8": self.leechlist_image()
                 elif i == "9":
                     if self.check_gw() in [4]:
-                        print("[0/9] Downloading final day")
-                        self.run(0)
-                        print("[1/9] Compiling Data")
-                        self.buildGW()
-                        print("[2/9] Building a SQL database")
-                        self.makedb()
-                        print("[3/9] Updating /gbfg/ data")
-                        self.downloadGbfg()
-                        self.buildGbfgFile()
-                        print("[4/9] Building crew .csv files")
-                        self.build_crew_list()
-                        print("[5/9] Building the crew ranking .csv file")
-                        self.build_crew_ranking_list()
-                        print("[6/9] Building the player ranking .csv file")
-                        self.build_player_list()
-                        print("[7/9] Building the captain ranking .csv file")
-                        self.build_player_list(captain_mode=True)
-                        print("[8/9] Building images for .csv files")
-                        self.leechlist_image()
-                        print("[9/9] Complete")
+                        print("The following will be done:")
+                        print("- Rankings will be downloaded")
+                        print("- Final compiled JSON will be generated")
+                        print("- SQL file will be generated")
+                        print("- /gbfg/ CSV will be generated")
+                        if input("Input 'y' toc onfirm and start:").lower() == 'y':
+                            print("[0/9] Downloading final day")
+                            self.run(0)
+                            print("[1/9] Compiling Data")
+                            self.buildGW()
+                            print("[2/9] Building a SQL database")
+                            self.makedb()
+                            print("[3/9] Updating /gbfg/ data")
+                            self.downloadGbfg()
+                            self.buildGbfgFile()
+                            print("[4/9] Building crew CSV files")
+                            self.build_crew_list()
+                            print("[5/9] Building the crew ranking CSV file")
+                            self.build_crew_ranking_list()
+                            print("[6/9] Building the player ranking CSV file")
+                            self.build_player_list()
+                            print("[7/9] Building the captain ranking CSV file")
+                            self.build_player_list(captain_mode=True)
+                            print("[8/9] Building images for .csv files")
+                            self.leechlist_image()
+                            print("[9/9] Complete")
                     else:
                         print("Invalid GW state to continue")
                         print("This setting is only usable on the last day")
@@ -1034,136 +1045,142 @@ class Scraper():
 
         for filename in csv_files:
             print("Opening", filename)
-            # Load csv
-            df = pd.read_csv(filename)
+            try:
+                # Load csv
+                df = pd.read_csv(filename)
 
-            if len(df) > 50: # for Players.csv or History.csv
-                if filename.endswith('_Players.csv') or filename.endswith('_Captains.csv'):
-                    isplayerfile = True
+                if len(df) > 50: # for Players.csv or History.csv
+                    if filename.endswith('_Players.csv') or filename.endswith('_Captains.csv'):
+                        isplayerfile = True
+                        player_index = 13
+                        limit = 300 # entry limit
+                    elif '_History_' in filename:
+                        isplayerfile = True
+                        player_index = 13
+                        limit = 300
+                    if len(df) > limit:
+                        df = df.head(limit)
+                    part_count = int(math.ceil(len(df) / 50.0))
+                    
+                    index = 0
+                    parts = [df.iloc[:50]]
+                    for i in range(1, part_count):
+                        parts.append(df.iloc[50*i:min(len(df), 50*(i+1))])
+                        parts[-1].reset_index(drop=True, inplace=True) # reset index of subsequent parts
+                    df = pd.concat(parts, axis=1) # concatenate parts
+                else:
+                    isplayerfile = False
                     player_index = 16
-                elif filename.endswith('_History.csv'):
-                    isplayerfile = True
-                    player_index = 18
-                if len(df) > 300:
-                    df = df.head(300) # limit to 300 players
-                part_count = int(math.ceil(len(df) / 50.0))
-                
-                index = 0
-                parts = [df.iloc[:50]]
-                for i in range(1, part_count):
-                    parts.append(df.iloc[50*i:min(len(df), 50*(i+1))])
-                    parts[-1].reset_index(drop=True, inplace=True) # reset index of subsequent parts
-                df = pd.concat(parts, axis=1) # concatenate parts
-            else:
-                isplayerfile = False
-                player_index = 16
-            iscrewfile = (filename.endswith('_Crews.csv'))
+                iscrewfile = (filename.endswith('_Crews.csv'))
 
-            # Replace NaN values with an empty string
-            df.replace(np.nan, '', inplace=True)
+                # Replace NaN values with an empty string
+                df.replace(np.nan, '', inplace=True)
 
-            # Create a figure and axis for plotting
-            fig, ax = plt.subplots(figsize=(8, 6))
-            ax.axis('off')
+                # Create a figure and axis for plotting
+                fig, ax = plt.subplots(figsize=(8, 6))
+                ax.axis('off')
 
-            # Plot the table using ax.table()
-            table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='left', loc='center')
-            table.auto_set_font_size(False)
-            table.set_fontsize(12)
-            table.scale(1, 1.5)
+                # Plot the table using ax.table()
+                table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='left', loc='center')
+                table.auto_set_font_size(False)
+                table.set_fontsize(12)
+                table.scale(1, 1.5)
 
-            empty_lines = set() # for player files
+                empty_lines = set() # for player files
 
-            element_count = 0
-            id_col = set()
-            guild_col = set()
-            name_col = set()
-            best_col = set()
-            # read first row
-            for key, cell in table.get_celld().items():
-                if key[0] != 0: continue
-                cell_text = cell.get_text().get_text()
-                if cell_text.endswith('.1') or cell_text.endswith('.2'):
-                    cell.get_text().set_text(cell_text[:-2])
-                if cell_text == "id": id_col.add(key[1])
-                elif cell_text == "guild": guild_col.add(key[1])
-                elif cell_text == "name": name_col.add(key[1])
-                elif cell_text == "best ranked" or cell_text == "best contrib.": best_col.add(key[1])
-
-            # Set the font properties for each text object within the cells
-            for key, cell in table.get_celld().items():
-                cell.set_text_props(fontproperties=prop)
-                cell.set_edgecolor('none')
-                # Format float numbers as integers, with thousand separators
-                cell_text = cell.get_text().get_text()
-                if cell_text.replace(".", "").isnumeric():
-                    if key[1] in id_col: # ID formatting
-                        cell.get_text().set_text(str(int(float(cell_text))))
-                    else:
-                        cell.get_text().set_text('{:,}'.format(int(float(cell_text))))
-                    if key[1] == 0: # counting number of elements (first column)
-                        element_count = max(element_count, int(cell.get_text().get_text()))
-                if isplayerfile and (key[1] % player_index) == 0 and key[1] >= player_index and cell_text == "":
-                    empty_lines.add("{}-{}".format(key[0], key[1] // player_index))
-
-            ldf = len(df) # data length
-            for key, cell in table.get_celld().items():
-                # Format other strings
-                row_index, col_index = key
-                if isplayerfile:
-                    col_part = col_index // player_index
-                    col_index = col_index % player_index
-                cell_text = cell.get_text().get_text()
-                if row_index == 0 and (col_index == 0 or (isplayerfile and col_index == 0)): # Hide the content of the first cell
-                    cell.get_text().set_text("")
-                elif cell_text == "":
-                    if isplayerfile and "{}-{}".format(row_index, col_part) in empty_lines:
-                        pass # do nothing
-                    elif row_index <= element_count:
-                        cell.get_text().set_text("n/a")
-                elif cell_text == "id":
-                    cell.get_text().set_text("ID")
-                else:
-                    if col_index in guild_col and row_index > 0: # guild column
-                        pass # no formatting
-                    elif col_index in best_col and row_index > 0: # best column (History.csv)
-                        pass # no formatting
-                    elif col_index in name_col and row_index > 0: # name
-                        pass # no formatting
-                    else:
-                        cell.get_text().set_text(cell_text.capitalize().replace('& d', '& D'))
-
-                # Alternating row colors
-                if isplayerfile:
-                    row_index, col_index = key
-                    index = (row_index - 1) + (col_index // player_index) * (ldf + 1)
-                else:
-                    index = row_index
-                if row_index == 0: # header
-                    table[key].set_facecolor(header_color)
-                    table[key].get_text().set_color('#ffffff')
-                elif row_index <= element_count:
-                    color_index = (index + 1) % 2
+                element_count = 0
+                id_col = set()
+                guild_col = set()
+                name_col = set()
+                best_col = set()
+                # read first row
+                for key, cell in table.get_celld().items():
+                    if key[0] != 0: continue
                     cell_text = cell.get_text().get_text()
-                    if col_index == 0 or (isplayerfile and (col_index % player_index) == 0): # first column
-                        table[key].set_facecolor(first_col_color[color_index])
-                    elif cell.get_text().get_text() == "n/a":
-                        table[key].set_facecolor(na_color[color_index])
+                    if cell_text.endswith('.1') or cell_text.endswith('.2'):
+                        cell.get_text().set_text(cell_text[:-2])
+                    if cell_text == "id": id_col.add(key[1])
+                    elif cell_text == "guild": guild_col.add(key[1])
+                    elif cell_text == "name": name_col.add(key[1])
+                    elif cell_text == "best ranked" or cell_text == "best contrib.": best_col.add(key[1])
+
+                # Set the font properties for each text object within the cells
+                for key, cell in table.get_celld().items():
+                    cell.set_text_props(fontproperties=prop)
+                    cell.set_edgecolor('none')
+                    # Format float numbers as integers, with thousand separators
+                    cell_text = cell.get_text().get_text()
+                    if cell_text.replace(".", "").isnumeric():
+                        if key[1] in id_col: # ID formatting
+                            cell.get_text().set_text(str(int(float(cell_text))))
+                        else:
+                            cell.get_text().set_text('{:,}'.format(int(float(cell_text))))
+                        if key[1] == 0: # counting number of elements (first column)
+                            element_count = max(element_count, int(cell.get_text().get_text()))
+                    if isplayerfile and (key[1] % player_index) == 0 and key[1] >= player_index and cell_text == "":
+                        empty_lines.add("{}-{}".format(key[0], key[1] // player_index))
+
+                ldf = len(df) # data length
+                for key, cell in table.get_celld().items():
+                    # Format other strings
+                    row_index, col_index = key
+                    if isplayerfile:
+                        col_part = col_index // player_index
+                        col_index = col_index % player_index
+                    cell_text = cell.get_text().get_text()
+                    if row_index == 0 and (col_index == 0 or (isplayerfile and col_index == 0)): # Hide the content of the first cell
+                        cell.get_text().set_text("")
+                    elif cell_text == "":
+                        if isplayerfile and "{}-{}".format(row_index, col_part) in empty_lines:
+                            pass # do nothing
+                        elif row_index <= element_count:
+                            cell.get_text().set_text("n/a")
+                    elif cell_text == "id":
+                        cell.get_text().set_text("ID")
                     else:
-                        try: ranking = int(table._cells[(row_index, col_index + 1 - col_index % player_index)]._text.get_text().replace(',', ''))
-                        except: ranking = 9999999998
-                        for k, v in tiers[iscrewfile].items():
-                            if ranking < k:
-                                table[key].set_facecolor(v[color_index])
-                                break
+                        if col_index in guild_col and row_index > 0: # guild column
+                            pass # no formatting
+                        elif col_index in best_col and row_index > 0: # best column (History.csv)
+                            pass # no formatting
+                        elif col_index in name_col and row_index > 0: # name
+                            pass # no formatting
+                        else:
+                            cell.get_text().set_text(cell_text.capitalize().replace('& d', '& D'))
 
-            # Automatically adjust the cell size to fit the text
-            table.auto_set_column_width(col=list(range(len(df.columns))))
+                    # Alternating row colors
+                    if isplayerfile:
+                        row_index, col_index = key
+                        index = (row_index - 1) + (col_index // player_index) * (ldf + 1)
+                    else:
+                        index = row_index
+                    if row_index == 0: # header
+                        table[key].set_facecolor(header_color)
+                        table[key].get_text().set_color('#ffffff')
+                    elif row_index <= element_count:
+                        color_index = (index + 1) % 2
+                        cell_text = cell.get_text().get_text()
+                        if col_index == 0 or (isplayerfile and (col_index % player_index) == 0): # first column
+                            table[key].set_facecolor(first_col_color[color_index])
+                        elif cell.get_text().get_text() == "n/a":
+                            table[key].set_facecolor(na_color[color_index])
+                        else:
+                            try: ranking = int(table._cells[(row_index, col_index + 1 - col_index % player_index)]._text.get_text().replace(',', ''))
+                            except: ranking = 9999999998
+                            for k, v in tiers[iscrewfile].items():
+                                if ranking < k:
+                                    table[key].set_facecolor(v[color_index])
+                                    break
 
-            # Save the image
-            plt.savefig(output_folder + '/' + filename.replace('.csv', '.png'), bbox_inches='tight')
-            plt.close()
-            print(filename.replace('.csv', '.png'), "done")
+                # Automatically adjust the cell size to fit the text
+                table.auto_set_column_width(col=list(range(len(df.columns))))
+
+                # Save the image
+                plt.savefig(output_folder + '/' + filename.replace('.csv', '.png'), bbox_inches='tight')
+                plt.close()
+                print(filename.replace('.csv', '.png'), "done")
+            except Exception as e:
+                self.pexc(e)
+                print("Failed to process", filename)
 
 if __name__ == "__main__":
     Scraper().interface()
