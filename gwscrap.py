@@ -181,7 +181,8 @@ class Scraper():
                         print("Exiting...")
                         exit(0)
             except Exception as e:
-                print(self.pexc(e))
+                if str(e) != "":
+                    print(self.pexc(e))
                 print("No GW set in memory")
                 while True:
                     try:
