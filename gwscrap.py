@@ -22,7 +22,7 @@ import glob
 
 class Scraper():
     def __init__(self):
-        print("GW Ranking Scraper 2.2")
+        print("GW Ranking Scraper 2.3")
         self.gbfg_ids = ["1744673", "645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1807204", "472465", "1161924", "432330", "1629318", "1837508", "1880420", "678459", "632242", "1141898", "1380234", "1601132", "1580990", "844716", "581111", "1010961"]
         self.gbfg_nicknames = {
             "1837508" : "Nier!",
@@ -362,6 +362,30 @@ class Scraper():
             print("Invalid GW state to continue")
             return
         # user check
+        print("Make sure you won't overwrite a file with the suffix '{}' (Press anything to continue): ".format(day))
+        while True:
+            s = input("Input a number of seconds to wait before starting, or leave blank to continue:")
+            if s == "":
+                break
+            else:
+                try:
+                    s = int(s)
+                    if s == 0:
+                        break
+                    elif s < 0:
+                        print("Negative wait values aren't supported")
+                    elif s > 10000:
+                        print("Big wait value detected")
+                        if input("Input 'y' to confirm that it's not a typo, or anything else to modify").lower() == 'y':
+                            print("Waiting", s, "seconds")
+                            time.sleep(s)
+                            break
+                    else:
+                        print("Waiting", s, "seconds")
+                        time.sleep(s)
+                        break
+                except:
+                    print("Invalid wait value")
         input("Make sure you won't overwrite a file with the suffix '{}' (Press anything to continue): ".format(day))
         # check the game version
         self.version = str(self.getGameversion())
