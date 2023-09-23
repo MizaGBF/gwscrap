@@ -364,7 +364,7 @@ class Scraper():
         # user check
         print("Make sure you won't overwrite a file with the suffix '{}' ".format(day))
         while True:
-            s = input("Input a number of seconds to wait before starting, or leave blank to continue:")
+            s = input("Input a number of minutes to wait before starting, or leave blank to continue:")
             if s == "":
                 break
             else:
@@ -374,15 +374,15 @@ class Scraper():
                         break
                     elif s < 0:
                         print("Negative wait values aren't supported")
-                    elif s > 10000:
+                    elif s > 240:
                         print("Big wait value detected")
                         if input("Input 'y' to confirm that it's not a typo, or anything else to modify").lower() == 'y':
-                            print("Waiting", s, "seconds")
-                            time.sleep(s)
+                            print("Waiting", s, "minutes")
+                            time.sleep(s*60)
                             break
                     else:
-                        print("Waiting", s, "seconds")
-                        time.sleep(s)
+                        print("Waiting", s, "minutes")
+                        time.sleep(s*60)
                         break
                 except:
                     print("Invalid wait value")
