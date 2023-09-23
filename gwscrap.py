@@ -362,7 +362,7 @@ class Scraper():
             print("Invalid GW state to continue")
             return
         # user check
-        print("Make sure you won't overwrite a file with the suffix '{}' (Press anything to continue): ".format(day))
+        print("Make sure you won't overwrite a file with the suffix '{}' ".format(day))
         while True:
             s = input("Input a number of seconds to wait before starting, or leave blank to continue:")
             if s == "":
