@@ -386,7 +386,6 @@ class Scraper():
                         break
                 except:
                     print("Invalid wait value")
-        input("Make sure you won't overwrite a file with the suffix '{}' (Press anything to continue): ".format(day))
         # check the game version
         self.version = str(self.getGameversion())
         if self.version is None:
