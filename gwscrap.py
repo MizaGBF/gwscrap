@@ -988,7 +988,7 @@ class Scraper():
                         print("- Final compiled JSON will be generated")
                         print("- SQL file will be generated")
                         print("- /gbfg/ CSV will be generated")
-                        if input("Input 'y' toc onfirm and start:").lower() == 'y':
+                        if input("Input 'y' to confirm and start:").lower() == 'y':
                             print("[0/9] Downloading final day")
                             self.run(0)
                             print("[1/9] Compiling Data")
