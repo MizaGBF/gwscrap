@@ -10,19 +10,30 @@ import signal
 import sqlite3
 import csv
 import os
-from bs4 import BeautifulSoup
 import statistics
 import traceback
-import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-import numpy as np
-import math
 import glob
+
+IMPORTED = False
+
+def additional_import(): # to only import if needed to improve script start speed
+    global IMPORTED
+    if not IMPORTED:
+        IMPORTED = True
+        try:
+            import pandas as pd
+            import matplotlib.pyplot as plt
+            import matplotlib.font_manager as fm
+            import numpy as np
+            import math
+        except Exception as e:
+            print("Error:", e)
+            return False
+    return True
 
 class Scraper():
     def __init__(self):
-        print("GW Ranking Scraper 2.3")
+        print("GW Ranking Scraper 2.4")
         self.gbfg_ids = ["1744673", "645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1807204", "472465", "1161924", "432330", "1629318", "1837508", "1880420", "678459", "632242", "1141898", "1380234", "1601132", "1580990", "844716", "581111", "1010961"]
         self.gbfg_nicknames = {
             "1837508" : "Nier!",
@@ -855,113 +866,6 @@ class Scraper():
                 print("Couldn't create 'gbfg/{}.json'".format(c))
                 return
 
-    def build_history(self):
-        try:
-            with open('gbfg.json') as f:
-                gbfg = json.load(f)
-        except Exception as e:
-            print("Error:", self.pexc(e))
-            return
-        l = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-            futures = []
-            for c in gbfg:
-                if 'private' in gbfg[c]: continue
-                for p in gbfg[c]['player']:
-                    futures.append(executor.submit(self.build_history_sub, p['id'], p['name'], p['level'], gbfg[c]['name']))
-            count = 0
-            countmax = len(futures)
-            print("Requesting", countmax, "players to http://gbf.kohi-nattou.com/ ...")
-            gwrange = None
-            for future in concurrent.futures.as_completed(futures):
-                r = future.result()
-                if r is not None:
-                    l.append(r[0])
-                    if r[1] is not None:
-                        if gwrange is None:
-                            gwrange = r[1]
-                        else:
-                            if r[1][0] < gwrange[0]:
-                                gwrange[0] = r[1][0]
-                            elif r[1][1] > gwrange[1]:
-                                gwrange[1] = r[1][1]
-                count += 1
-                if count >= countmax:
-                    print("Progress: 100%")
-                elif count % 30 == 0:
-                    print("Progress: {:.1f}%".format(100*count/countmax))
-        for i in range(len(l)-1):
-            for j in range(i+1, len(l)):
-                if l[i][1] > l[j][1]:
-                    l[i], l[j] = l[j], l[i]
-        for i in range(len(l)):
-            l[i][0] = i + 1
-        if len(l) > 0:
-            filename = "GW{}_History_for_GW{}-{}.csv".format(self.gw, gwrange[0], gwrange[1])
-            with open(filename, 'w', newline='', encoding="utf-8") as csvfile:
-                llwriter = csv.writer(csvfile, delimiter=',', quotechar='"', lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
-                llwriter.writerow(["", "#", "percentile", "id", "name", "guild", "rank", "best ranked", "#", "best contrib.", "contribution", "total battles", "total honor"])
-                for i in range(0, len(l)):
-                    llwriter.writerow(l[i])
-            print("{}: Done".format(filename))
-
-    def build_history_sub(self, pid, pname, plevel, cname):
-        try:
-            response = self.client.post("http://gbf.kohi-nattou.com/2023/07/15/test/", data={'id': str(pid), 'search': '検索'}, headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9", "Accept-Encoding": "gzip, deflate", "Connection": "keep-alive", "Host": "gbf.kohi-nattou.com", "Origin": "http://gbf.kohi-nattou.com", "Referer": "http://gbf.kohi-nattou.com/2023/07/15/test/", "User-Agent": "Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"}, timeout=30)
-            if response.status_code != 200: raise Exception(str(response.status_code))
-            soup = BeautifulSoup(response.text, 'html.parser')
-            d = [0, "", "", pid, pname, cname.replace('"', '\\"'), plevel, "", "", "", "", "", ""]
-            # part 1
-            div = soup.find_all("div", class_="highlight-section")
-            if len(div) == 0: return None
-            div = div[0]
-            gwrange = None
-            for children in div.findChildren(recursive=False):
-                if "highlight-title" in children.attrs["class"]:
-                    gwrange = children.text.split("さんの第")[1].split("までの古戦場の振り返り")[0].replace("回～第", "-").replace("回", "").split('-') # range
-                    gwrange[0] = int(gwrange[0])
-                    gwrange[1] = int(gwrange[1])
-                elif "highlight-info" in children.attrs["class"]:
-                    for cd in children.findChildren(recursive=False):
-                        if "highlight-info-item" in cd.attrs["class"]:
-                            cc = cd.findChildren()
-                            if cc[0].text == "合計貢献度:":
-                                d[12] = cc[1].text.replace(',', '') # total honors
-                            elif cc[0].text == "合計討伐数:":
-                                d[11] = cc[1].text.replace(',', '').replace(' 体', '') # total battles
-                            elif cc[0].text == "貢献度ランキング：":
-                                d[1] = int(cc[1].text.replace(',', '').replace(' 位', '')) # rank
-                elif "highlight-label2" in children.attrs["class"]:
-                    d[2] = children.text.split("あなたは上位")[1].replace("の騎空士です", "")
-            # part 2
-            div = soup.find_all("div", class_="highlight-section2")[0]
-            for children in div.findChildren(recursive=False):
-                if "highlight-title" in children.attrs["class"]:
-                    d[7] = "GW " + children.text.split("最も順位が高かったのは第")[1].split("回古戦場")[0] # best ranked gw
-                elif "highlight-info" in children.attrs["class"]:
-                    for cd in children.findChildren(recursive=False):
-                        if "highlight-info-item" in cd.attrs["class"]:
-                            cc = cd.findChildren()
-                            if cc[0].text == "順位:":
-                                d[8] = cc[1].text.replace(',', '').replace(' 位', '') # rank
-            # part 3
-            div = soup.find_all("div", class_="highlight-section3")[0]
-            for children in div.findChildren(recursive=False):
-                if "highlight-title" in children.attrs["class"]:
-                    d[9] = "GW " + children.text.split("最も貢献度を稼いだのは第")[1].split("回古戦場")[0] # best contrib gw
-                elif "highlight-info" in children.attrs["class"]:
-                    for cd in children.findChildren(recursive=False):
-                        if "highlight-info-item" in cd.attrs["class"]:
-                            cc = cd.findChildren()
-                            if cc[0].text == "貢献度:":
-                                d[10] = cc[1].text.replace(',', '') # honor
-            return d, gwrange
-        except Exception as e:
-            if str(e) == "timed out":
-                return self.build_history_sub(pid, pname, plevel, cname)
-            print("Error", pid, e)
-            return None
-
     def interface(self):
         # main loop
         self.check_gw(no_ongoing_check=True)
@@ -1014,15 +918,14 @@ class Scraper():
                         print("This setting is only usable on the last day")
                 elif i == "10":
                     while True:
-                        print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary /gbfg/ Ranking\n[2] Download /gbfg/ player lists\n[3] Download and Build /gbfg/ History (Experimental)\n[4] Toggle Temp GW ID\n[5] Build (You) Leechlist (non-sorted)\n[Any] Quit")
+                        print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary /gbfg/ Ranking\n[2] Download /gbfg/ player lists\n[3] Toggle Temp GW ID\n[4] Build (You) Leechlist (non-sorted)\n[Any] Quit")
                         i = input("Input: ")
                         print('')
                         if i == "0": self.buildGbfgFile()
                         elif i == "1": self.build_temp_crew_ranking_list()
                         elif i == "2": self.downloadGbfg()
-                        elif i == "3": self.build_history()
-                        elif i == "4": self.toggle_temp_data()
-                        elif i == "5": self.build_crew_list(you_mode=True)
+                        elif i == "3": self.toggle_temp_data()
+                        elif i == "4": self.build_crew_list(you_mode=True)
                         else: break
                         self.save()
                 else: exit(0)
@@ -1031,6 +934,10 @@ class Scraper():
             self.save()
 
     def leechlist_image(self):
+        if not additional_import():
+            print("Can't build leechlist images")
+            return
+    
         # colors
         tiers = [
             { # players
