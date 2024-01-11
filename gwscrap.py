@@ -14,23 +14,6 @@ import statistics
 import traceback
 import glob
 
-IMPORTED = False
-
-def additional_import(): # to only import if needed to improve script start speed
-    global IMPORTED
-    if not IMPORTED:
-        IMPORTED = True
-        try:
-            import pandas as pd
-            import matplotlib.pyplot as plt
-            import matplotlib.font_manager as fm
-            import numpy as np
-            import math
-        except Exception as e:
-            print("Error:", e)
-            return False
-    return True
-
 class Scraper():
     def __init__(self):
         print("GW Ranking Scraper 2.4")
@@ -934,7 +917,13 @@ class Scraper():
             self.save()
 
     def leechlist_image(self):
-        if not additional_import():
+        try:
+            import pandas as pd
+            import matplotlib.pyplot as plt
+            import matplotlib.font_manager as fm
+            import numpy as np
+            import math
+        except Exception as e:
             print("Can't build leechlist images")
             return
     
