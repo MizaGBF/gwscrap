@@ -1,11 +1,10 @@
-﻿from datetime import datetime, timedelta, timezone
-import httpx
+﻿import asyncio
+import aiohttp
+from contextlib import asynccontextmanager
+from typing import Generator, Optional, Any
+from datetime import datetime, timedelta, timezone
 import json
-import time
 import re
-from threading import Lock
-import concurrent.futures
-from queue import Queue
 import signal
 import sqlite3
 import csv
@@ -15,26 +14,25 @@ import traceback
 import glob
 
 class Scraper():
-    def __init__(self):
-        print("GW Ranking Scraper 2.4")
-        self.gbfg_ids = ["1744673", "645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1807204", "472465", "1161924", "432330", "1837508", "1880420", "678459", "632242", "1141898", "1380234", "1601132", "1580990", "844716", "581111", "1010961"]
-        self.gbfg_nicknames = {
-            "1837508" : "Nier!",
-            "432330" : "Little Girls",
-            "472465" : "Haruna",
-            "1141898" : "Quatrebois",
-            "1036007" : "Cumshot Happiness",
-            "599992" : "Fleet"
-        }
-        
-        limits = httpx.Limits(max_keepalive_connections=100, max_connections=100, keepalive_expiry=10)
-        self.client = httpx.Client(http2=True, limits=limits)
+    GBFG = ["1744673", "645927", "977866", "745085", "1317803", "940560", "1049216", "841064", "1036007", "705648", "599992", "1807204", "472465", "1161924", "432330", "1837508", "1880420", "678459", "632242", "1141898", "1380234", "1601132", "1580990", "844716", "581111", "1010961"]
+    GBFG_NICKs = {
+        "1837508" : "Nier!",
+        "432330" : "Little Girls",
+        "472465" : "Haruna",
+        "1141898" : "Quatrebois",
+        "1036007" : "Cumshot Happiness",
+        "599992" : "Fleet"
+    }
+    TASK_COUNT = 80
+    def __init__(self) -> None:
+        print("GW Ranking Scraper 3.0")
+        self.client = None
+        self.loop = None
         self.gw = None
         self.gw_dates = None
         self.temp_gw_mode = False
         self.temp_dat = None
-        self.max_threads = 100 # change this if needed
-        self.lock = Lock()
+        self.imports = False
         # preparing urls
         self.crew_url = ""
         self.player_url = ""
@@ -47,31 +45,41 @@ class Scraper():
         if not self.load():
             self.save() # failed? we make an empty file
             print("No 'config.json' file found.\nAn empty 'config.json' files has been created\nPlease fill it with your cookie, user agent and GBF profile id")
-            exit(0)
-        # for Ctrl+C
-        signal.signal(signal.SIGINT, self.exit)
+            os._exit(0)
 
-    def pexc(self, exception):
+    @asynccontextmanager
+    async def init_client(self) -> Generator['aiohttp.ClientSession', None, None]:
+        try:
+            self.client = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20))
+            yield self.client
+        finally:
+            await self.client.close()
+
+    def pexc(self, exception : Exception) -> str:
         try:
             return "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
         except:
             return exception
 
-    def exit(self): # called by ctrl+C
-        print("Saving...")
+    def exit(self, *args) -> None: # called by ctrl+C
+        print("")
         self.save()
+        os._exit(0)
 
-    def load(self): # load cookie and stuff
+    def load(self) -> bool: # load cookie and stuff
         try:
             with open('config.json') as f:
                 data = json.load(f)
                 self.data = data
+                if isinstance(self.data.get('cookie', None), str):
+                    self.data['cookie'] = self.str2cookie(self.data['cookie'])
+                    self.modified = True
                 return True
         except Exception as e:
             print('load(): ' + self.pexc(e))
             return False
 
-    def save(self): # save
+    def save(self) -> bool: # save
         if self.modified:
             try:
                 with open('config.json', 'w') as outfile:
@@ -83,7 +91,7 @@ class Scraper():
                 print('save(): ' + self.pexc(e))
                 return False
 
-    def writeFile(self, data, name): # write our scraped ranking
+    def writeFile(self, data : Any, name : str) -> bool: # write our scraped ranking
         try:
             with open(name, 'w') as outfile:
                 json.dump(data, outfile)
@@ -92,7 +100,7 @@ class Scraper():
             print('writeFile(): ' + self.pexc(e))
             return False
 
-    def toggle_temp_data(self):
+    def toggle_temp_data(self) -> None:
         if self.temp_gw_mode:
             self.gw = None
             self.temp_gw_mode = False
@@ -119,12 +127,12 @@ class Scraper():
             print("Internal variables set to GW", self.gw, "for day", self.temp_dat)
 
     # gw stuff
-    def gw_url(self):
+    def gw_url(self) -> None:
         base_url = "https://game.granbluefantasy.jp/teamraid{}".format((str(self.gw)).zfill(3))
         self.crew_url = base_url + "/rest/ranking/totalguild/detail/{}/0?_={}&t={}&uid={}"
         self.player_url = base_url + "/rest_ranking_user/detail/{}/0?_={}&t={}&uid={}"
     
-    def check_gw(self, no_ongoing_check=False):
+    def check_gw(self, no_ongoing_check : bool = False) -> Optional[int]:
         if self.temp_gw_mode: return 0
         while True:
             try:
@@ -173,7 +181,7 @@ class Scraper():
                     case _:
                         print("Unsupported state, debugging is needed")
                         print("Exiting...")
-                        exit(0)
+                        os._exit(0)
             except Exception as e:
                 if str(e) != "":
                     print(self.pexc(e))
@@ -222,14 +230,14 @@ class Scraper():
                     self.data.pop('dates')
                     print("Settings not saved")
 
-    def gw_to_file(self, d):
+    def gw_to_file(self, d : int) -> Optional[str]:
         try:
             if self.temp_gw_mode: return self.temp_dat
             return ['prelim', 'd1', 'd2', 'd3', 'd4'][d]
         except:
             return None
 
-    def gw_set(self, DDMMYY):
+    def gw_set(self, DDMMYY : Optional[list]) -> Optional[dict]:
         if DDMMYY is None: return None
         dates = {}
         dates["Preliminaries"] = datetime.now(timezone.utc).replace(tzinfo=None).replace(year=DDMMYY[2], month=DDMMYY[1], day=DDMMYY[0], hour=19, minute=0, second=0, microsecond=0)
@@ -266,91 +274,97 @@ class Scraper():
         else:
             return -2
 
-    def JST(self):
+    def JST(self) -> datetime:
         return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=32400) - timedelta(seconds=30)
 
     # utility used by build_crew_list
-    def avg_of(self, l): 
+    def avg_of(self, l : list) -> str: 
         if len(l) == 0:
             return ''
         else:
             return str(sum(l)//len(l))
 
-    def med_of(self, l):
+    def med_of(self, l : list) -> str:
         if len(l) == 0:
             return ''
         else:
-            return statistics.median(l)
+            return str(statistics.median(l))
 
-    def sum_of(self, l):
+    def sum_of(self, l : list) -> str:
         if len(l) == 0:
             return 'n/a'
         else:
-            return sum(l)
+            return str(sum(l))
 
-    def getGameversion(self): # get the game version
+    async def getGameversion(self) -> Optional[int]: # get the game version
         try:
-            response = self.client.get('https://game.granbluefantasy.jp/', headers={'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive'})
-            if response.status_code != 200: raise Exception()
-            res = self.vregex.findall(response.content.decode('utf-8'))
-            return int(res[0]) # to check if digit
+            response = await self.client.get('https://game.granbluefantasy.jp/', headers={'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive'})
+            async with response:
+                if response.status != 200: raise Exception()
+                res = self.vregex.findall(response.content.decode('utf-8'))
+                return int(res[0]) # to check if digit
         except:
             return None
 
-    def updateCookie(self, new): # update the cookie string
-        A = self.data['cookie'].split(';')
-        B = new.split(';')
-        for c in B:
-            tA = c.split('=')
-            if tA[0][0] == " ": tA[0] = tA[0][1:]
-            for i in range(0, len(A)):
-                tB = A[i].split('=')
-                if tB[0][0] == " ": tB[0] = tB[0][1:]
-                if tA[0] == tB[0]:
-                    A[i] = c
-                    break
-        with self.lock:
-            self.data['cookie'] = ";".join(A)
-            self.modified = True
+    def updateCookie(self, header : dict) -> None: # update the cookie string
+        B = self.str2cookie(header)
+        for k, v in B.items():
+            if k in self.data['cookie']:
+                self.data['cookie'][k] = v
+        self.modified = True
 
-    def requestRanking(self, page, crew = True): # request a ranking page and return the data
+    def str2cookie(self, header : str) -> dict:
+        cd = {}
+        for c in header.split(";"):
+            ct = c.split("=")
+            cd[ct[0].strip()] = ct[1].strip()
+        return cd
+
+    async def requestRanking(self, page, crew = True) -> Optional[dict]: # request a ranking page and return the data
         try:
             ts = int(datetime.now(timezone.utc).replace(tzinfo=None).timestamp() * 1000)
             if crew: url = self.crew_url.format(page, ts, ts+300, self.data['id'])
             else: url = self.player_url.format(page, ts, ts+300, self.data['id'])
-            response = self.client.get(url, headers={'Cookie': self.data['cookie'], 'Referer': 'https://game.granbluefantasy.jp/', 'Origin': 'https://game.granbluefantasy.jp', 'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'X-Requested-With': 'XMLHttpRequest', 'X-VERSION': self.version, 'Accept': 'application/json, text/javascript, */*; q=0.01', 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive', 'Content-Type': 'application/json'})
-            if response.status_code != 200: raise Exception()
-            try: self.updateCookie(response.headers['set-cookie'])
-            except: pass
-            return response.json()
+            self.client.cookie_jar.clear()
+            self.client.cookie_jar.update_cookies(self.data['cookie'])
+            response = await self.client.get(url, headers={'Cookie': self.data['cookie'], 'Referer': 'https://game.granbluefantasy.jp/', 'Origin': 'https://game.granbluefantasy.jp', 'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'X-Requested-With': 'XMLHttpRequest', 'X-VERSION': self.version, 'Accept': 'application/json, text/javascript, */*; q=0.01', 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive', 'Content-Type': 'application/json'})
+            async with response:
+                if response.status != 200: raise Exception()
+                try: self.updateCookie(response.headers['set-cookie'])
+                except: pass
+                return await response.json()
         except:
             return None
 
-    def crewProcess(self, q, results): # thread for crew ranking
+    async def crewProcess(self, q : asyncio.Queue, results : list) -> bool: # task for crew ranking
         while not q.empty():
             page = q.get()
             data = None
             while data is None or data['count'] == False:
-                data = self.requestRanking(page, True)
+                data = await self.requestRanking(page, True)
                 if data is None or data['count'] == False: print("Crew: Error on page", page)
             for i in range(0, len(data['list'])):
                 results[int(data['list'][i]['ranking'])-1] = data['list'][i]
             q.task_done()
         return True
 
-    def playerProcess(self, q, results): # thread for player ranking (same thing, I copypasted)
+    async def playerProcess(self, q : asyncio.Queue, results : list) -> bool: # task for player ranking
         while not q.empty():
-            page = q.get()
+            try:
+                await asyncio.sleep(0)
+                page = q.get_nowait()
+            except:
+                continue
             data = None
             while data is None or data['count'] == False:
-                data = self.requestRanking(page, False)
+                data = await self.requestRanking(page, False)
                 if data is None or data['count'] == False: print("Player: Error on page", page)
             for i in range(0, len(data['list'])):
                 results[int(data['list'][i]['rank'])-1] = data['list'][i]
             q.task_done()
         return True
 
-    def run(self, mode = 0): # main loop. 0 = both crews and players, 1 = crews, 2 = players
+    async def run(self, mode : int = 0) -> None: # main loop. 0 = both crews and players, 1 = crews, 2 = players
         day = self.gw_to_file(self.check_gw())
         if day is None or self.temp_gw_mode:
             print("Invalid GW state to continue")
@@ -372,16 +386,16 @@ class Scraper():
                         print("Big wait value detected")
                         if input("Input 'y' to confirm that it's not a typo, or anything else to modify").lower() == 'y':
                             print("Waiting", s, "minutes")
-                            time.sleep(s*60)
+                            await asyncio.sleep(s*60)
                             break
                     else:
                         print("Waiting", s, "minutes")
-                        time.sleep(s*60)
+                        await asyncio.sleep(s*60)
                         break
                 except:
                     print("Invalid wait value")
         # check the game version
-        self.version = str(self.getGameversion())
+        self.version = str(await self.getGameversion())
         if self.version is None:
             print("Impossible to get the game version currently")
             return
@@ -389,7 +403,7 @@ class Scraper():
 
         if mode == 0 or mode == 1:
             # crew ranking
-            data = self.requestRanking(1, True) # get the first page
+            data = await self.requestRanking(1, True) # get the first page
             if data is None or data['count'] == False:
                 print("Can't access the crew ranking")
                 self.save()
@@ -401,15 +415,15 @@ class Scraper():
             for i in range(0, len(data['list'])): # fill the first slots with the first page data
                 results[i] = data['list'][i]
 
-            q = Queue()
+            q = asyncio.Queue()
             for i in range(2, last+1): # queue the pages to retrieve
-                q.put(i)
+                await q.put(i)
 
             print("Scraping...")
-            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_threads) as executor:
-                futures = [executor.submit(self.crewProcess, q, results) for i in range(self.max_threads)]
-                for future in concurrent.futures.as_completed(futures):
-                    future.result()
+            tasks = []
+            for i in range(self.TASK_COUNT):
+                tasks.append(self.crewProcess(q, results))
+            await asyncio.gather(*tasks)
 
             self.writeFile(results, 'GW{}_crew_{}.json'.format(self.gw, day)) # save the result
             print("Done, saved to 'GW{}_crew_{}.json'".format(self.gw, day))
@@ -417,7 +431,7 @@ class Scraper():
 
         if mode == 0 or mode == 2:
             # player ranking. exact same thing, I lazily copypasted.
-            data = self.requestRanking(1, False)
+            data = await self.requestRanking(1, False)
             if data is None or data['count'] == False:
                 print("Can't access the player ranking")
                 self.save()
@@ -429,22 +443,21 @@ class Scraper():
             for i in range(0, len(data['list'])):
                 results[i] = data['list'][i]
 
-            q = Queue()
+            q = asyncio.Queue()
             for i in range(2, last+1):
-                q.put(i)
+                await q.put(i)
 
             print("Scraping...")
-            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_threads) as executor:
-                futures = [executor.submit(self.playerProcess, q, results) for i in range(self.max_threads)]
-                for future in concurrent.futures.as_completed(futures):
-                    future.result()
-            q.join()
+            tasks = []
+            for i in range(self.TASK_COUNT):
+                tasks.append(self.playerProcess(q, results))
+            await asyncio.gather(*tasks)
 
             self.writeFile(results, 'GW{}_player_{}.json'.format(self.gw, day))
             print("Done, saved to 'GW{}_player_{}.json'".format(self.gw, day))
             self.save()
 
-    def buildGW(self, mode = 0): # build a .json compiling all the data withing json named with the 'days' suffix
+    def buildGW(self, mode : int = 0) -> None: # build a .json compiling all the data withing json named with the 'days' suffix
         if self.check_gw() is None:
             print("Invalid GW state to continue")
             return
@@ -496,7 +509,7 @@ class Scraper():
             self.writeFile(results, 'GW{}_player_full.json'.format(self.gw))
             print("Done, saved to 'GW{}_player_full.json'".format(self.gw))
 
-    def makedb(self): # make a SQL file (useful for searching the whole thing)
+    def makedb(self) -> None: # make a SQL file (useful for searching the whole thing)
         try:
             print("Building Database...")
             try:
@@ -523,7 +536,7 @@ class Scraper():
             print('makedb(): ' + self.pexc(e))
             return False
 
-    def build_crew_list(self, you_mode=False): # build the gbfg leechlists on a .csv format
+    def build_crew_list(self, you_mode : bool = False) -> None: # build the gbfg leechlists on a .csv format
         temp = self.gw_to_file(self.check_gw())
         if temp is None:
             print("Invalid GW state to continue")
@@ -543,7 +556,7 @@ class Scraper():
         for c in gbfg:
             if you_mode and c not in ["581111"]: continue
             if 'private' in gbfg[c]: continue # ignore private crews
-            name = self.gbfg_nicknames.get(c, gbfg[c]['name']).translate(remove_punctuation_map)
+            name = self.GBFG_NICKs.get(c, gbfg[c]['name']).translate(remove_punctuation_map)
             if you_mode: filename = "GW{}_(You)_not_sorted.csv".format(self.gw)
             else: filename = "GW{}_{}.csv".format(self.gw, name)
             with open(filename, 'w', newline='', encoding="utf-8") as csvfile:
@@ -609,7 +622,7 @@ class Scraper():
                 llwriter.writerow(['', 'guild', str(c), gname, '', '', '', '', '', '', '', '', '', '', ''])
                 print("{}: Done".format(filename))
 
-    def build_temp_crew_ranking_list(self): # same thing but while gw is on going (work a bit differently, might be useful for scouting enemies)
+    def build_temp_crew_ranking_list(self) -> None: # same thing but while gw is on going (work a bit differently, might be useful for scouting enemies)
         try:
             with open('GW{}_crew_full.json'.format(self.gw)) as f:
                 crews = json.load(f)
@@ -621,7 +634,7 @@ class Scraper():
             llwriter.writerow(["", "#", "id", "name", "preliminaries", "day 1", "day 2", "day 3", "day 4", "total"])
             ranked = []
             unranked = []
-            for c in self.gbfg_ids:
+            for c in self.GBFG:
                 if c in crews:
                     gname = crews[c]['name'].replace('"', '\\"')
                     row = [crews[c].get('ranking', 'n/a'), c, gname]
@@ -650,7 +663,7 @@ class Scraper():
                 llwriter.writerow(row)
             print("GW{}_Crews.csv: Done".format(self.gw))
 
-    def build_crew_ranking_list(self): # build the ranking of all the gbfg crews
+    def build_crew_ranking_list(self) -> None: # build the ranking of all the gbfg crews
         try:
             with open('gbfg.json') as f:
                 gbfg = json.load(f)
@@ -693,7 +706,7 @@ class Scraper():
                 llwriter.writerow(row)
             print("GW{}_Crews.csv: Done".format(self.gw))
 
-    def build_player_list(self, captain_mode=False):  # build the ranking of all the gbfg players
+    def build_player_list(self, captain_mode : bool = False) -> None:  # build the ranking of all the gbfg players
         try:
             with open('gbfg.json') as f:
                 gbfg = json.load(f)
@@ -745,7 +758,7 @@ class Scraper():
         else:
             print("Error, not sufficient or complete player data")
 
-    def buildGbfgFile(self): # check the gbfg folder for any json files and fuse the data into one
+    def buildGbfgFile(self) -> None: # check the gbfg folder for any json files and fuse the data into one
         # gbfg.json is used in other functions, it contains the crew member lists
         try:
             files = glob.glob("gbfg/*.json")
@@ -768,33 +781,29 @@ class Scraper():
         except Exception as e:
             print("Failed: ", self.pexc(e))
 
-    def buildRequest(self, url, payload=None): # to request stuff to gbf
-        headers = {'Cookie': self.data['cookie'], 'Referer': 'https://game.granbluefantasy.jp/', 'Origin': 'https://game.granbluefantasy.jp', 'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'X-Requested-With': 'XMLHttpRequest', 'X-VERSION': str(self.version), 'Accept': 'application/json, text/javascript, */*; q=0.01', 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive', 'Content-Type': 'application/json'}
-        if payload is None:
-            response = self.client.get(url, headers=headers)
-        else:
-            response = self.client.post(url, headers=headers, data=payload)
-        if response.status_code != 200: raise Exception()
-        return response
-
-    def requestCrew(self, id, page): # request a crew info, page 0 = main page, page 1-3 = member pages
+    async def requestCrew(self, id : int, page : int) -> dict: # request a crew info, page 0 = main page, page 1-3 = member pages
         try:
             ts = int(datetime.now(timezone.utc).replace(tzinfo=None).timestamp() * 1000)
             if page == 0:
-                req = self.buildRequest("https://game.granbluefantasy.jp/guild_other/guild_info/{}?_={}&t={}&uid={}".format(id, ts, ts+300, self.data['id']))
+                url = "https://game.granbluefantasy.jp/guild_other/guild_info/{}?_={}&t={}&uid={}".format(id, ts, ts+300, self.data['id'])
             else:
-                req = self.buildRequest("https://game.granbluefantasy.jp/guild_other/member_list/{}/{}?_={}&t={}&uid={}".format(page, id, ts, ts+300, self.data['id']))
-            try: self.updateCookie(req.headers['set-cookie'])
-            except: pass
-            return req.json()
+                url = "https://game.granbluefantasy.jp/guild_other/member_list/{}/{}?_={}&t={}&uid={}".format(page, id, ts, ts+300, self.data['id'])
+            self.client.cookie_jar.clear()
+            self.client.cookie_jar.update_cookies(self.data['cookie'])
+            response = await self.client.get(url, headers={'Referer': 'https://game.granbluefantasy.jp/', 'Origin': 'https://game.granbluefantasy.jp', 'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'X-Requested-With': 'XMLHttpRequest', 'X-VERSION': str(self.version), 'Accept': 'application/json, text/javascript, */*; q=0.01', 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive', 'Content-Type': 'application/json'})
+            async with response:
+                if response.status != 200: raise Exception()
+                try: self.updateCookie(response.headers['set-cookie'])
+                except: pass
+                return response.json()
         except:
             return None
 
-    def downloadGbfg_sub(self, id: int): # subroutine
+    async def downloadGbfg_sub(self, id: int) -> dict: # subroutine
         crew = {}
         data = {}
         for i in range(0, 4):
-            get = self.requestCrew(id, i)
+            get = await self.requestCrew(id, i)
             if get is None:
                 if i == 0: print('Crew `{}` not found'.format(id))
                 elif i == 1:
@@ -815,25 +824,24 @@ class Scraper():
                     data[str(id)] = crew
         return data
 
-    def downloadGbfg(self, *ids : int): # download all the gbfg crew member lists and make a json file in the gbfg folder
+    async def downloadGbfg(self, *ids : int): # download all the gbfg crew member lists and make a json file in the gbfg folder
         if len(ids) == 0:
             ids = []
-            for i in self.gbfg_ids:
+            for i in self.GBFG:
                 ids.append(int(i))
         data = {}
-        self.version = self.getGameversion()
+        self.version = await self.getGameversion()
         if self.version is None:
             print("Impossible to get the game version currently")
             return
-            
-        with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
-            futures = []
-            for id in ids:
-                futures.append(executor.submit(self.downloadGbfg_sub, id))
-            for future in concurrent.futures.as_completed(futures):
-                r = future.result()
-                if r is not None:
-                    data = data | r
+        
+        tasks = []
+        for id in ids:
+            tasks.append(self.downloadGbfg_sub(id))
+        res = await asyncio.gather(*tasks)
+        for r in res:
+            if r is not None:
+                data = data | r
         if data:
             if not os.path.exists('gbfg'):
                 try: os.makedirs('gbfg')
@@ -849,83 +857,96 @@ class Scraper():
                 print("Couldn't create 'gbfg/{}.json'".format(c))
                 return
 
-    def interface(self):
-        # main loop
-        self.check_gw(no_ongoing_check=True)
-        while True:
-            try:
-                print("\nMain Menu\n[0] Download Crew Ranking\n[1] Download Player Ranking\n[2] Download Crew and Player Ranking\n[3] Compile Ranking Data\n[4] Build SQL Database\n[5] Build /gbfg/ Lists\n[6] Build /gbfg/ Crew Ranking\n[7] Build /gbfg/ Player and Captain Rankings\n[8] Convert CSV into images\n[9] Do All (Only on day 4 and 5)\n[10] Advanced\n[Any] Quit")
-                i = input("Input: ")
-                print('')
-                if i == "0": self.run(1)
-                elif i == "1": self.run(2)
-                elif i == "2": self.run(0)
-                elif i == "3": self.buildGW()
-                elif i == "4": self.makedb()
-                elif i == "5": self.build_crew_list()
-                elif i == "6": self.build_crew_ranking_list()
-                elif i == "7":
-                    self.build_player_list()
-                    self.build_player_list(captain_mode=True)
-                elif i == "8": self.leechlist_image()
-                elif i == "9":
-                    if self.check_gw() in [4]:
-                        print("The following will be done:")
-                        print("- Rankings will be downloaded")
-                        print("- Final compiled JSON will be generated")
-                        print("- SQL file will be generated")
-                        print("- /gbfg/ CSV will be generated")
-                        if input("Input 'y' to confirm and start:").lower() == 'y':
-                            print("[0/9] Downloading final day")
-                            self.run(0)
-                            print("[1/9] Compiling Data")
-                            self.buildGW()
-                            print("[2/9] Building a SQL database")
-                            self.makedb()
-                            print("[3/9] Updating /gbfg/ data")
-                            self.downloadGbfg()
-                            self.buildGbfgFile()
-                            print("[4/9] Building crew CSV files")
-                            self.build_crew_list()
-                            print("[5/9] Building the crew ranking CSV file")
-                            self.build_crew_ranking_list()
-                            print("[6/9] Building the player ranking CSV file")
-                            self.build_player_list()
-                            print("[7/9] Building the captain ranking CSV file")
-                            self.build_player_list(captain_mode=True)
-                            print("[8/9] Building images for .csv files")
-                            self.leechlist_image()
-                            print("[9/9] Complete")
-                    else:
-                        print("Invalid GW state to continue")
-                        print("This setting is only usable on the last day")
-                elif i == "10":
-                    while True:
-                        print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary /gbfg/ Ranking\n[2] Download /gbfg/ player lists\n[3] Toggle Temp GW ID\n[4] Build (You) Leechlist (non-sorted)\n[Any] Quit")
-                        i = input("Input: ")
-                        print('')
-                        if i == "0": self.buildGbfgFile()
-                        elif i == "1": self.build_temp_crew_ranking_list()
-                        elif i == "2": self.downloadGbfg()
-                        elif i == "3": self.toggle_temp_data()
-                        elif i == "4": self.build_crew_list(you_mode=True)
-                        else: break
-                        self.save()
-                else: exit(0)
-            except Exception as e:
-                print("Critical error:", self.pexc(e))
-            self.save()
+    async def interface(self):
+        async with self.init_client():
+            # main loop
+            self.loop = asyncio.get_event_loop()
+            try: # unix
+                self.loop.add_signal_handler(signal.SIGINT, self.exit)
+            except: # windows
+                signal.signal(signal.SIGINT, self.exit)
+            self.check_gw(no_ongoing_check=True)
+            while True:
+                try:
+                    print("\nMain Menu\n[0] Download Crew Ranking\n[1] Download Player Ranking\n[2] Download Crew and Player Ranking\n[3] Compile Ranking Data\n[4] Build SQL Database\n[5] Build /gbfg/ Lists\n[6] Build /gbfg/ Crew Ranking\n[7] Build /gbfg/ Player and Captain Rankings\n[8] Convert CSV into images\n[9] Do All (Only on day 4 and 5)\n[10] Advanced\n[Any] Quit")
+                    i = input("Input: ")
+                    print('')
+                    if i == "0": await self.run(1)
+                    elif i == "1": await self.run(2)
+                    elif i == "2": await self.run(0)
+                    elif i == "3": self.buildGW()
+                    elif i == "4": self.makedb()
+                    elif i == "5": self.build_crew_list()
+                    elif i == "6": self.build_crew_ranking_list()
+                    elif i == "7":
+                        self.build_player_list()
+                        self.build_player_list(captain_mode=True)
+                    elif i == "8": self.leechlist_image()
+                    elif i == "9":
+                        if self.check_gw() in [4]:
+                            print("The following will be done:")
+                            print("- Rankings will be downloaded")
+                            print("- Final compiled JSON will be generated")
+                            print("- SQL file will be generated")
+                            print("- /gbfg/ CSV will be generated")
+                            if input("Input 'y' to confirm and start:").lower() == 'y':
+                                print("[0/9] Downloading final day")
+                                await self.run(0)
+                                print("[1/9] Compiling Data")
+                                self.buildGW()
+                                print("[2/9] Building a SQL database")
+                                self.makedb()
+                                print("[3/9] Updating /gbfg/ data")
+                                await self.downloadGbfg()
+                                self.buildGbfgFile()
+                                print("[4/9] Building crew CSV files")
+                                self.build_crew_list()
+                                print("[5/9] Building the crew ranking CSV file")
+                                self.build_crew_ranking_list()
+                                print("[6/9] Building the player ranking CSV file")
+                                self.build_player_list()
+                                print("[7/9] Building the captain ranking CSV file")
+                                self.build_player_list(captain_mode=True)
+                                print("[8/9] Building images for .csv files")
+                                self.leechlist_image()
+                                print("[9/9] Complete")
+                        else:
+                            print("Invalid GW state to continue")
+                            print("This setting is only usable on the last day")
+                    elif i == "10":
+                        while True:
+                            print("\nAdvanced Menu\n[0] Merge 'gbfg.json' files\n[1] Build Temporary /gbfg/ Ranking\n[2] Download /gbfg/ player lists\n[3] Toggle Temp GW ID\n[4] Build (You) Leechlist (non-sorted)\n[Any] Quit")
+                            i = input("Input: ")
+                            print('')
+                            if i == "0": self.buildGbfgFile()
+                            elif i == "1": self.build_temp_crew_ranking_list()
+                            elif i == "2": await self.downloadGbfg()
+                            elif i == "3": self.toggle_temp_data()
+                            elif i == "4": self.build_crew_list(you_mode=True)
+                            else: break
+                            self.save()
+                    else: os._exit(0)
+                except Exception as e:
+                    print("Critical error:", self.pexc(e))
+                self.save()
 
     def leechlist_image(self):
-        try:
-            import pandas as pd
-            import matplotlib.pyplot as plt
-            import matplotlib.font_manager as fm
-            import numpy as np
-            import math
-        except Exception as e:
-            print("Can't build leechlist images")
-            return
+        if not self.imports:
+            try:
+                global pd
+                import pandas as pd
+                global plt
+                import matplotlib.pyplot as plt
+                global fm
+                import matplotlib.font_manager as fm
+                global np
+                import numpy as np
+                global math
+                import math
+                self.imports = True
+            except:
+                print("Can't build leechlist images")
+                return
     
         # colors
         tiers = [
@@ -1103,4 +1124,4 @@ class Scraper():
                 print("Failed to process", filename)
 
 if __name__ == "__main__":
-    Scraper().interface()
+    asyncio.run(Scraper().interface())
