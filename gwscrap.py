@@ -301,7 +301,7 @@ class Scraper():
             response = await self.client.get('https://game.granbluefantasy.jp/', headers={'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive'})
             async with response:
                 if response.status != 200: raise Exception()
-                res = self.vregex.findall(response.content.decode('utf-8'))
+                res = self.vregex.findall((await response.read()).decode('utf-8'))
                 return int(res[0]) # to check if digit
         except:
             return None
@@ -795,7 +795,7 @@ class Scraper():
                 if response.status != 200: raise Exception()
                 try: self.updateCookie(response.headers['set-cookie'])
                 except: pass
-                return response.json()
+                return await response.json()
         except:
             return None
 
