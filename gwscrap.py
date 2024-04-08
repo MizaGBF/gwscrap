@@ -338,7 +338,11 @@ class Scraper():
 
     async def crewProcess(self, q : asyncio.Queue, results : list) -> bool: # task for crew ranking
         while not q.empty():
-            page = q.get()
+            try:
+                await asyncio.sleep(0)
+                page = q.get_nowait()
+            except:
+                continue
             data = None
             while data is None or data['count'] == False:
                 data = await self.requestRanking(page, True)
