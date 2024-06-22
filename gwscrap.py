@@ -25,7 +25,7 @@ class Scraper():
     }
     TASK_COUNT = 80
     def __init__(self) -> None:
-        print("GW Ranking Scraper 3.0")
+        print("GW Ranking Scraper 3.1")
         self.client = None
         self.loop = None
         self.gw = None
@@ -368,41 +368,42 @@ class Scraper():
             q.task_done()
         return True
 
-    async def run(self, mode : int = 0) -> None: # main loop. 0 = both crews and players, 1 = crews, 2 = players
+    async def run(self, mode : int = 0, silent : bool = False) -> bool: # main loop. 0 = both crews and players, 1 = crews, 2 = players
         day = self.gw_to_file(self.check_gw())
         if day is None or self.temp_gw_mode:
             print("Invalid GW state to continue")
-            return
-        # user check
-        print("Make sure you won't overwrite a file with the suffix '{}' ".format(day))
-        while True:
-            s = input("Input a number of minutes to wait before starting, or leave blank to continue:")
-            if s == "":
-                break
-            else:
-                try:
-                    s = int(s)
-                    if s == 0:
-                        break
-                    elif s < 0:
-                        print("Negative wait values aren't supported")
-                    elif s > 240:
-                        print("Big wait value detected")
-                        if input("Input 'y' to confirm that it's not a typo, or anything else to modify").lower() == 'y':
+            return False
+        if not silent:
+            # user check
+            print("Make sure you won't overwrite a file with the suffix '{}' ".format(day))
+            while True:
+                s = input("Input a number of minutes to wait before starting, or leave blank to continue:")
+                if s == "":
+                    break
+                else:
+                    try:
+                        s = int(s)
+                        if s == 0:
+                            break
+                        elif s < 0:
+                            print("Negative wait values aren't supported")
+                        elif s > 240:
+                            print("Big wait value detected")
+                            if input("Input 'y' to confirm that it's not a typo, or anything else to modify:").lower() == 'y':
+                                print("Waiting", s, "minutes")
+                                await asyncio.sleep(s*60)
+                                break
+                        else:
                             print("Waiting", s, "minutes")
                             await asyncio.sleep(s*60)
                             break
-                    else:
-                        print("Waiting", s, "minutes")
-                        await asyncio.sleep(s*60)
-                        break
-                except:
-                    print("Invalid wait value")
+                    except:
+                        print("Invalid wait value")
         # check the game version
         self.version = str(await self.getGameversion())
         if self.version is None:
             print("Impossible to get the game version currently")
-            return
+            return False
         print("Current game version is", self.version)
 
         if mode == 0 or mode == 1:
@@ -411,7 +412,7 @@ class Scraper():
             if data is None or data['count'] == False:
                 print("Can't access the crew ranking")
                 self.save()
-                return
+                return False
             count = int(data['count']) # number of crews
             last = data['last'] # number of pages
             print("Crew ranking has {} crews and {} pages".format(count, last))
@@ -439,7 +440,7 @@ class Scraper():
             if data is None or data['count'] == False:
                 print("Can't access the player ranking")
                 self.save()
-                return
+                return False
             count = int(data['count'])
             last = data['last']
             print("Crew ranking has {} players and {} pages".format(count, last))
@@ -460,6 +461,7 @@ class Scraper():
             self.writeFile(results, 'GW{}_player_{}.json'.format(self.gw, day))
             print("Done, saved to 'GW{}_player_{}.json'".format(self.gw, day))
             self.save()
+        return True
 
     def buildGW(self, mode : int = 0) -> None: # build a .json compiling all the data withing json named with the 'days' suffix
         if self.check_gw() is None:
@@ -895,25 +897,25 @@ class Scraper():
                             print("- /gbfg/ CSV will be generated")
                             if input("Input 'y' to confirm and start:").lower() == 'y':
                                 print("[0/9] Downloading final day")
-                                await self.run(0)
-                                print("[1/9] Compiling Data")
-                                self.buildGW()
-                                print("[2/9] Building a SQL database")
-                                self.makedb()
-                                print("[3/9] Updating /gbfg/ data")
-                                await self.downloadGbfg()
-                                self.buildGbfgFile()
-                                print("[4/9] Building crew CSV files")
-                                self.build_crew_list()
-                                print("[5/9] Building the crew ranking CSV file")
-                                self.build_crew_ranking_list()
-                                print("[6/9] Building the player ranking CSV file")
-                                self.build_player_list()
-                                print("[7/9] Building the captain ranking CSV file")
-                                self.build_player_list(captain_mode=True)
-                                print("[8/9] Building images for .csv files")
-                                self.leechlist_image()
-                                print("[9/9] Complete")
+                                if await self.run(0, silent=True):
+                                    print("[1/9] Compiling Data")
+                                    self.buildGW()
+                                    print("[2/9] Building a SQL database")
+                                    self.makedb()
+                                    print("[3/9] Updating /gbfg/ data")
+                                    await self.downloadGbfg()
+                                    self.buildGbfgFile()
+                                    print("[4/9] Building crew CSV files")
+                                    self.build_crew_list()
+                                    print("[5/9] Building the crew ranking CSV file")
+                                    self.build_crew_ranking_list()
+                                    print("[6/9] Building the player ranking CSV file")
+                                    self.build_player_list()
+                                    print("[7/9] Building the captain ranking CSV file")
+                                    self.build_player_list(captain_mode=True)
+                                    print("[8/9] Building images for .csv files")
+                                    self.leechlist_image()
+                                    print("[9/9] Complete")
                         else:
                             print("Invalid GW state to continue")
                             print("This setting is only usable on the last day")
