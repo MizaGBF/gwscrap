@@ -368,37 +368,36 @@ class Scraper():
             q.task_done()
         return True
 
-    async def run(self, mode : int = 0, silent : bool = False) -> bool: # main loop. 0 = both crews and players, 1 = crews, 2 = players
+    async def run(self, mode : int = 0) -> bool: # main loop. 0 = both crews and players, 1 = crews, 2 = players
         day = self.gw_to_file(self.check_gw())
         if day is None or self.temp_gw_mode:
             print("Invalid GW state to continue")
             return False
-        if not silent:
-            # user check
-            print("Make sure you won't overwrite a file with the suffix '{}' ".format(day))
-            while True:
-                s = input("Input a number of minutes to wait before starting, or leave blank to continue:")
-                if s == "":
-                    break
-                else:
-                    try:
-                        s = int(s)
-                        if s == 0:
-                            break
-                        elif s < 0:
-                            print("Negative wait values aren't supported")
-                        elif s > 240:
-                            print("Big wait value detected")
-                            if input("Input 'y' to confirm that it's not a typo, or anything else to modify:").lower() == 'y':
-                                print("Waiting", s, "minutes")
-                                await asyncio.sleep(s*60)
-                                break
-                        else:
+        # user check
+        print("Make sure you won't overwrite a file with the suffix '{}' ".format(day))
+        while True:
+            s = input("Input a number of minutes to wait before starting, or leave blank to continue:")
+            if s == "":
+                break
+            else:
+                try:
+                    s = int(s)
+                    if s == 0:
+                        break
+                    elif s < 0:
+                        print("Negative wait values aren't supported")
+                    elif s > 240:
+                        print("Big wait value detected")
+                        if input("Input 'y' to confirm that it's not a typo, or anything else to modify:").lower() == 'y':
                             print("Waiting", s, "minutes")
                             await asyncio.sleep(s*60)
                             break
-                    except:
-                        print("Invalid wait value")
+                    else:
+                        print("Waiting", s, "minutes")
+                        await asyncio.sleep(s*60)
+                        break
+                except:
+                    print("Invalid wait value")
         # check the game version
         self.version = str(await self.getGameversion())
         if self.version is None:
@@ -897,7 +896,7 @@ class Scraper():
                             print("- /gbfg/ CSV will be generated")
                             if input("Input 'y' to confirm and start:").lower() == 'y':
                                 print("[0/9] Downloading final day")
-                                if await self.run(0, silent=True):
+                                if await self.run(0):
                                     print("[1/9] Compiling Data")
                                     self.buildGW()
                                     print("[2/9] Building a SQL database")
