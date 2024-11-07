@@ -301,9 +301,7 @@ class Scraper():
             response = await self.client.get('https://game.granbluefantasy.jp/', headers={'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive'})
             async with response:
                 if response.status != 200: raise Exception()
-                x = (await response.read()).decode('utf-8')
-                print(x)
-                res = self.vregex.findall(x)
+                res = self.vregex.findall((await response.read()).decode('utf-8'))
                 return int(res[0]) # to check if digit
         except Exception as e:
             print(e)
