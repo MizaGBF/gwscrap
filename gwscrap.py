@@ -25,7 +25,7 @@ class Scraper():
     }
     TASK_COUNT = 80
     def __init__(self) -> None:
-        print("GW Ranking Scraper 3.1")
+        print("GW Ranking Scraper 3.2")
         self.client = None
         self.loop = None
         self.gw = None
@@ -40,7 +40,7 @@ class Scraper():
         self.data = {'id':0, 'cookie':'', 'user_agent':''}
         self.modified = False
         self.version = None
-        self.vregex = re.compile("Game\.version = \"(\d+)\";")
+        self.vregex = re.compile("\\/assets\\/(\d+)\\/")
         # load our data
         if not self.load():
             self.save() # failed? we make an empty file
@@ -301,9 +301,12 @@ class Scraper():
             response = await self.client.get('https://game.granbluefantasy.jp/', headers={'Host': 'game.granbluefantasy.jp', 'User-Agent': self.data['user_agent'], 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en', 'Connection': 'keep-alive'})
             async with response:
                 if response.status != 200: raise Exception()
-                res = self.vregex.findall((await response.read()).decode('utf-8'))
+                x = (await response.read()).decode('utf-8')
+                print(x)
+                res = self.vregex.findall(x)
                 return int(res[0]) # to check if digit
-        except:
+        except Exception as e:
+            print(e)
             return None
 
     def updateCookie(self, header : dict) -> None: # update the cookie string
